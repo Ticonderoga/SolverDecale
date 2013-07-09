@@ -6,6 +6,8 @@ import numpy as np
 from functools import partial
 #attention il y a aussi scipy.integrate
 import scipy.interpolate as scinterp 
+from sympy.parsing.sympy_parser import parse_expr
+
 
 class Section(object) :
     def __init__(self,config,sec) :
@@ -14,9 +16,20 @@ class Section(object) :
             if config.get(sec,it) == '' :  # on teste si c'est vide
                 vars(self)[it] = None
             elif config.get(sec,it).count(',')>=1 : # on teste si c'est une liste de param
-                vars(self)[it] =map(float,config.get(sec,it).split(','))
+                if config.get(sec,it).count('pi')==0 : # pas de pi
+                    try :
+                        vars(self)[it] = map(float,config.get(sec,it).split(','))
+                    except ValueError :
+                        vars(self)[it] = config.get(sec,it).split(',') # une liste de chaines
+                        
+                elif config.get(sec,it).count('pi')>=1 : # au moins un pi
+                    vars(self)[it] = [float(parse_expr(el).n()) for el in config.get(sec,it).split(',')]
+
             elif config.get(sec,it).isalpha() : # on teste si c'est une chaine
-                vars(self)[it]=config.get(sec,it)
+                if config.get(sec,it).count('pi')==0 :
+                    vars(self)[it]=config.get(sec,it)
+                elif config.get(sec,it).count('pi')>=1 :
+                    vars(self)[it]=float(parse_expr(config.get(sec,it)).n())
             else : # dans les autre cas c'est un float
                 try :
                     vars(self)[it] = config.getfloat(sec,it)
@@ -43,6 +56,11 @@ class Section(object) :
                 # la fonction partial est indispensable
                 vars(self)[k[:-6]]=partial(self._dynamicProp,param=param,typeDyn=typeDyn)
 
+            if k[-4:]=='expr' :
+                expr=vars(self).get(k)
+                vars(self)[k[:-5]]= parse_expr(expr)
+                delattr(self, k)
+                
     def _dynamicProp(self,arg,**keywords) :
         param=keywords.get('param')
         typeDyn=keywords.get('typeDyn')
