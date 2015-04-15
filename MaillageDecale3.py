@@ -10,7 +10,7 @@ from sympy.parsing.sympy_parser import parse_expr
 from ImportData import *
 from Routines.proprietes_fluides import C2K, K2C
 from Routines.AnToolsPyx import *
-from Routines.trans_heat_cond.analytical.funcTheta import theta
+from Routines.Heat_Transfer.analytical.funcTheta import theta
 
 
 class Maillage(ImportData) :
