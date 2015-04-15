@@ -133,7 +133,12 @@ def split_data(k) :
     ki = (k[1::,:]+k[:-1:,:])/2.
     kj = (k[:,1::]+k[:,:-1:])/2. 
     return ki,kj
- 
+
+def rolling_window(a, window):
+    shape = a.shape[:-1] + (a.shape[-1] - window + 1, window)
+    strides = a.strides + (a.strides[-1],)
+    return np.lib.stride_tricks.as_strided(a, shape=shape, strides=strides)
+
 if __name__  ==  '__main__' :
     np.seterr(divide='ignore')
     np.seterr(invalid='ignore')
@@ -157,7 +162,10 @@ if __name__  ==  '__main__' :
 
     fn_1=Cable.Mail.val_f[-2]
     gn_1=Cable.Mail.val_f[-2]
-
+#    pour se faciliter la tâche
+    m=Cable.Mail.nb_angle-1
+    n=Cable.Mail.nb_r-1
+#    fin
     aj = Cable.Geom.angle/2*(g[idxj+1]-g[idxj-1])
     li = Cable.Geom.radius/2*(f[idxi+1]-f[idxi-1])
     cij_p = Cable.Geom.radius/2*mykron(f[idxi]+f[idxi+1],aj)
@@ -212,48 +220,23 @@ if __name__  ==  '__main__' :
     
     temp = (np.dot(Cable.Func.C(Cable.Mail.Gama)[:,np.newaxis], \
         Cable.Func.D1(Cable.Mail.Phi)[np.newaxis,:])*Foij/4./dPhi)
-    temp2_m = (np.dot(Cable.Func.C(Cable.Mail.Gama)[:,np.newaxis], \
-        Cable.Func.D2(Cable.Mail.Phi)[np.newaxis,:])/2./dPhi**2)[:,1::]*Foij_pm
-    temp2_p = (np.dot(Cable.Func.C(Cable.Mail.Gama)[:,np.newaxis], \
-        Cable.Func.D2(Cable.Mail.Phi)[np.newaxis,:])/2./dPhi**2)[:,:-1:]*Foij_pm
+    temp2 = (np.dot(Cable.Func.C(Cable.Mail.Gama)[:,np.newaxis], \
+        Cable.Func.D2(Cable.Mail.Phi)[np.newaxis,:])/2./dPhi**2)
+    beta_m = -temp[:,1::] + temp2[:,1::]*Foij_pm
+    beta_p = temp[:,1::] + temp2[:,:-1:]*Foij_pm
 
-    beta_m = -temp[1::,1:-1:] + temp2_m[1::,:-1:]
-    beta_p = temp[1::,1:-1] + temp2_p[1::,1::]
-    beta = temp2_m[1::,:-1:] + temp2_p[1::,1::]
+    beta_m = np.c_[np.zeros((Cable.Mail.nb_r,1)),beta_m]
+    
     beta_m_nj = 4*Foij_pm[-1,1::]/np.pi**2/(3+fn_1)/ \
             ((g[idxj+1]-g[idxj-1])*(g[idxj]-g[idxj-1]))[1:-1:]
+    
+
+
+    beta_p[:,0] = 2*temp2[:,0]*Foij_pm[:,0]
+    beta = beta_m + beta_p
+        
+    
     beta_p_nj = 4*Foij_pm[-1,:-1:]/np.pi**2/(3+fn_1)/ \
             ((g[idxj+1]-g[idxj-1])*(g[idxj+1]-g[idxj]))[1:-1:]
-    beta_m[-1,:] = beta_m_nj
-    beta_p[-1,:] = beta_p_nj
-#TOFIX
-    beta = np.r_[beta,(beta_m_nj+beta_p_nj)[np.newaxis,:]]
-    
-    beta_m = np.c_[ np.zeros((Cable.Mail.nb_r-1,1)), \
-        beta_m, \
-        Foij_pm[:,-1]*Cable.Func.C(Cable.Mail.Gama)* \
-        Cable.Func.D2(Cable.Mail.Phi)[-1]/dPhi**2]
-        
-    beta_p = np.c_[ Foij_pm[:,0]*Cable.Func.C(Cable.Mail.Gama)* \
-        Cable.Func.D2(Cable.Mail.Phi)[0]/dPhi**2, \
-        beta_p, \
-        np.zeros((Cable.Mail.nb_r,1))]
-    
-    beta = np.c_[beta_m[:,0]+beta_p[:,0],beta,beta_m[:,-1]+beta_p[:,-1]]
-    beta_m[-1,-1] = Foij_pm[-1,-1]*4/np.pi**2/(1-g[m-1])**2/(3+fn_1)
-    beta_p[-1,-1] = 0.
-    beta[-1,-1] = Foij_pm[-1,-1]*4/np.pi**2/(1-g[m-1])**2/(3+fn_1)
-
-    T_cal_radius = np.empty_like(T)
-# ______________    
-#/    Calcul    \_______________________________
-    nbdt=1
-    for iter_time in range(nbdt):
-        rhs_radius_base = np.zeros((Cable.Mail.nb_r,Cable.Mail.nb_angle))
-        rhs_radius_base[-1,:] = eta_nj*Cable.CL.Tinf
-        for j in range(int(Cable.Mail.nb_angle-1)) :
             
-            rhs_radius = np.c_[beta_m[:,j:j+1],1-beta[:,j:j+1],beta_p[:,j:j+1]]
-            T_cal_radius[:,j] = Solution_Thomas(alpha_m[:,j],\
-                np.ones_like(alpha[:,j])+alpha[:,j],\
-                alpha_p[:,j],rhs_radius[:,j])
+            

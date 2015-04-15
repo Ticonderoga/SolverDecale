@@ -24,17 +24,17 @@ class Section(object) :
                         
                 elif config.get(sec,it).count('pi')>=1 : # au moins un pi
                     vars(self)[it] = [float(parse_expr(el).n()) for el in config.get(sec,it).split(',')]
-
-            elif config.get(sec,it).isalpha() : # on teste si c'est une chaine
-                if config.get(sec,it).count('pi')==0 :
+            
+            # on teste si c'est une chaine
+            elif config.get(sec,it).isalpha() and config.get(sec,it).count('pi')==0: 
                     vars(self)[it]=config.get(sec,it)
-                elif config.get(sec,it).count('pi')>=1 :
+            elif config.get(sec,it).count('pi')>=1 :
                     vars(self)[it]=float(parse_expr(config.get(sec,it)).n())
             else : # dans les autre cas c'est un float
                 try :
                     vars(self)[it] = config.getfloat(sec,it)
                 except ValueError : # a-priori on a un mélange float + str
-                    vars(self)[it]=config.get(sec,it)
+                    vars(self)[it] = config.get(sec,it)
         
         for k in vars(self).keys() : 
             if k[-5:]=='param' and vars(self).get(k)<>None :
