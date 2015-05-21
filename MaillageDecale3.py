@@ -137,7 +137,7 @@ def padding(M) :
 
 def fake_source(Wire,p=2,Qmax=0.) :
     """Function to fake an inhomogenous heat source in a wire 
-    Q=fake_source(Waire,p=3,Qavg=0.) 
+    Q=fake_source(Wire,p=3,Qavg=0.) 
     with     
     Wire : Maillage object
     p : parameter to refine near the spot. Default Value 2
@@ -296,59 +296,88 @@ if __name__  ==  '__main__' :
     beta_p[-1,-1] = 0
     beta[-1,-1] = beta_m[-1,-1]
     
-    heat_source=fake_source(Cable,p=2,Qmax=0.)
-    rhs1=mul3cols(beta_m,1-beta,beta_p,T)
-    rhs1[0,:]=T[0,:]
-    rhs2=heat_source*dt/2/Material.Ther.density/Material.Ther.heat_capacity
-    rhs2[-1,:]=rhs2[-1,:]+eta_nj*Cable.CL.Tinf
-    rhs2[0,:]=0
-    T1step=np.empty_like(T)
-    for j in range(m+1) :
-        T1step[:,j]=Solution_Thomas(alpha_m[1:,j],1+alpha[:,j],alpha_p[:-1,j],rhs1[:,j]+rhs2[:,j])
-
-    Cable.plotMail(3,'k')
-    Cable.plotData(3,data = heat_source,typeplot = 'Scatter')
-    plt.title('Heat Source')
-
-    Cable.plotMail(4,'k')
-    Cable.plotData(4,data = T,typeplot = 'Scatter')
-    plt.title('Initial Temperature')
-
-    Cable.plotMail(5,'k')
-    Cable.plotData(5,data = T1step,typeplot = 'Scatter')
-    plt.title('Temperature 1st Step')
-
-    T1_mean=np.mean(T[1,:])
-    T2_mean=np.mean(T[2,:])
-    print K2C(T1step.mean())
+    niter=0
+    convergence=True
+    while convergence :
+        heat_source=fake_source(Cable,p=2,Qmax=0.)
+        rhs1=mul3cols(beta_m,1-beta,beta_p,T)
+        rhs1[0,:]=T[0,:]
+        rhs2=heat_source*dt/2/Material.Ther.density/Material.Ther.heat_capacity
+        rhs2[-1,:]=rhs2[-1,:]+eta_nj*Cable.CL.Tinf
+        rhs2[0,:]=0
+        T1step=np.empty_like(T)
+        for j in range(m+1) :
+            T1step[:,j]=Solution_Thomas(alpha_m[1:,j],1+alpha[:,j],alpha_p[:-1,j],rhs1[:,j]+rhs2[:,j])
     
-    
-# _______________________________
-#/    Analytical Calculations    \_______________________________
-#     
-    ro = Cable.Geom.radius              # radius of sphere (a.k.a outer radius), m
-    rs = ro/ro                          # dimensionless surface radius, (-)
-    rc = 1e-16/ro                       # dimensionless center radius, (-)
-    
-    z = np.arange(0, 1250, 0.1)         # range to evaluate the zeta, Bi equation
-    
-    Fo_g = k[0,0]/Material.Ther.density/Material.Ther.heat_capacity*time/Cable.Geom.radius**2          # Fourier number, (-)
-    Bi_g = h*Cable.Geom.radius/k[0,0]          # Biot number, (-)
+        Tm1=T1step[1,:].mean()
+        Tm2=T1step[2,:].mean()
+        
+        Tcenter=(T1step[0,:]+heat_source[0,:]*dt/2/Material.Ther.density/Material.Ther.heat_capacity \
+            + Foij[0,:]*(Cable.Func.C3(0)/dGama-2*Cable.Func.C2(0)/dGama**2)*Tm1 \
+            + Foij[0,:]*Cable.Func.C2(0)/dGama**2*Tm2) \
+            / (1+Foij[0,:]*(Cable.Func.C3(0)/dGama-Cable.Func.C2(0)/dGama**2))
+        
+        T1step[0,:]=Tcenter
 
-    b = 1   # shape factor where 2 sphere, 1 cylinder, 0 slab
-    
-    # surface temperature where ro for outer surface
-    thetaRo = theta(rs, b, z, Bi_g, Fo_g)   # dimensionless temperature profile
-    To_cyl = Cable.CL.Tinf + thetaRo*(Tinit-Cable.CL.Tinf)   # convert theta to temperature in Kelvin, K
-    
-    # center temperature where r for center
-    thetaR = theta(rc, b, z, Bi_g, Fo_g)    # dimensionless temperature profile
-    Tr_cyl = Cable.CL.Tinf + thetaR*(Tinit-Cable.CL.Tinf)    # convert theta to temperature in Kelvin, K
+        rR=np.linalg.norm(T1step[0,:]-T[0,:])
+#        plt.figure(1)
+#        plt.plot(T1step[0,:]-T[0,:],label=str(niter))
+        
+        
+        convergence=(rR>1e-7) and niter <3
+        T=T1step
 
-    plt.figure()
-    plt.plot(time,Tr_cyl,label='Surface')
-    plt.plot(time,To_cyl,label='Center')
-    plt.grid()
-    plt.xlabel(r"$\textrm{Time}\ \left[s\right]$")
-    plt.ylabel(r"$\textrm{Temperature}\ \left[K\right]$")
-    plt.legend()
+        print "niter",niter
+        print "residu",rR
+        print "Temp centre",Tcenter.mean()        
+        print "Temp 1 couronne",Tm1
+        print "Temp 2 couronne",Tm2        
+        
+        niter=niter+1
+        
+#    Cable.plotMail(3,'k')
+#    Cable.plotData(3,data = heat_source,typeplot = 'Scatter')
+#    plt.title('Heat Source')
+#
+#    Cable.plotMail(4,'k')
+#    Cable.plotData(4,data = T,typeplot = 'Scatter')
+#    plt.title('Initial Temperature')
+#
+#    Cable.plotMail(5,'k')
+#    Cable.plotData(5,data = T1step,typeplot = 'Scatter')
+#    plt.title('Temperature 1st Step')
+#
+#    T1_mean=np.mean(T[1,:])
+#    T2_mean=np.mean(T[2,:])
+#    print K2C(T1step.mean())
+#    
+#    
+## _______________________________
+##/    Analytical Calculations    \_______________________________
+##     
+#    ro = Cable.Geom.radius              # radius of sphere (a.k.a outer radius), m
+#    rs = ro/ro                          # dimensionless surface radius, (-)
+#    rc = 1e-16/ro                       # dimensionless center radius, (-)
+#    
+#    z = np.arange(0, 1250, 0.1)         # range to evaluate the zeta, Bi equation
+#    
+#    Fo_g = k[0,0]/Material.Ther.density/Material.Ther.heat_capacity*time/Cable.Geom.radius**2          # Fourier number, (-)
+#    Bi_g = h*Cable.Geom.radius/k[0,0]          # Biot number, (-)
+#
+#    b = 1   # shape factor where 2 sphere, 1 cylinder, 0 slab
+#    
+#    # surface temperature where ro for outer surface
+#    thetaRo = theta(rs, b, z, Bi_g, Fo_g)   # dimensionless temperature profile
+#    To_cyl = Cable.CL.Tinf + thetaRo*(Tinit-Cable.CL.Tinf)   # convert theta to temperature in Kelvin, K
+#    
+#    # center temperature where r for center
+#    thetaR = theta(rc, b, z, Bi_g, Fo_g)    # dimensionless temperature profile
+#    Tr_cyl = Cable.CL.Tinf + thetaR*(Tinit-Cable.CL.Tinf)    # convert theta to temperature in Kelvin, K
+#
+#    plt.figure()
+#    plt.plot(time,Tr_cyl,label='Surface')
+#    plt.plot(time,To_cyl,label='Center')
+#    plt.grid()
+#    plt.xlabel(r"$\textrm{Time}\ \left[s\right]$")
+#    plt.ylabel(r"$\textrm{Temperature}\ \left[K\right]$")
+#    plt.legend()
