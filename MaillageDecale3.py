@@ -163,7 +163,16 @@ def mul3cols(Bm,B,Bp,T) :
     result[:,-1]=(supB[:-1,:,-1].T*T[:,-2:]).sum(-1)
 
     return result
-    
+   
+def calTcenter(Toldc,T) :
+    Tm1=T[1,:].mean()
+    Tm2=T[2,:].mean()
+    Tcenter=(Toldc+heat_source[0,:]*dt/2/Material.Ther.density/Material.Ther.heat_capacity \
+            + Foij[0,:]*(Cable.Func.C3(0)/dGama-2*Cable.Func.C2(0)/dGama**2)*Tm1 \
+            + Foij[0,:]*Cable.Func.C2(0)/dGama**2*Tm2) \
+            / (1+Foij[0,:]*(Cable.Func.C3(0)/dGama-Cable.Func.C2(0)/dGama**2))
+    return Tcenter
+
     
 if __name__  ==  '__main__' :
     np.seterr(divide='ignore')
@@ -208,7 +217,8 @@ if __name__  ==  '__main__' :
 #    Cable.plotMail(3,'k')
 #    Cable.plotData(3,data = sij,typeplot = 'Scatter')
     Tinit = C2K(100.)
-    T = Tinit*np.ones((Cable.Mail.nb_r,Cable.Mail.nb_angle))
+    Tinit_vec = Tinit*np.ones((Cable.Mail.nb_r,Cable.Mail.nb_angle))
+    T = Tinit_vec
 #    On fait un vecteur T bruité
 #    T=T*(1+0.3*np.random.randn(Cable.Mail.nb_r,Cable.Mail.nb_angle))
 
@@ -296,56 +306,76 @@ if __name__  ==  '__main__' :
     beta_p[-1,-1] = 0
     beta[-1,-1] = beta_m[-1,-1]
     
+# Boucle de convergence selon les rayons
     niter=0
     convergence=True
     while convergence :
         heat_source=fake_source(Cable,p=2,Qmax=0.)
         rhs1=mul3cols(beta_m,1-beta,beta_p,T)
-        rhs1[0,:]=T[0,:]
+        Toldc=T[0,:]
+        rhs1[0,:]=Toldc
         rhs2=heat_source*dt/2/Material.Ther.density/Material.Ther.heat_capacity
         rhs2[-1,:]=rhs2[-1,:]+eta_nj*Cable.CL.Tinf
         rhs2[0,:]=0
+        rhs=rhs1+rhs2
         T1step=np.empty_like(T)
         for j in range(m+1) :
-            T1step[:,j]=Solution_Thomas(alpha_m[1:,j],1+alpha[:,j],alpha_p[:-1,j],rhs1[:,j]+rhs2[:,j])
+            T1step[:,j]=Solution_Thomas(alpha_m[1:,j],1+alpha[:,j],alpha_p[:-1,j],rhs[:,j])
     
-        Tm1=T1step[1,:].mean()
-        Tm2=T1step[2,:].mean()
-        
-        Tcenter=(T1step[0,:]+heat_source[0,:]*dt/2/Material.Ther.density/Material.Ther.heat_capacity \
-            + Foij[0,:]*(Cable.Func.C3(0)/dGama-2*Cable.Func.C2(0)/dGama**2)*Tm1 \
-            + Foij[0,:]*Cable.Func.C2(0)/dGama**2*Tm2) \
-            / (1+Foij[0,:]*(Cable.Func.C3(0)/dGama-Cable.Func.C2(0)/dGama**2))
-        
-        T1step[0,:]=Tcenter
-
-        rR=np.linalg.norm(T1step[0,:]-T[0,:])
-#        plt.figure(1)
-#        plt.plot(T1step[0,:]-T[0,:],label=str(niter))
-        
-        
-        convergence=(rR>1e-7) and niter <3
-        T=T1step
-
+        Tnewc=calTcenter(Toldc,T1step)
+        rR=np.linalg.norm(Toldc-Tnewc)        
+        convergence=(rR>1e-7)
+    
         print "niter",niter
         print "residu",rR
-        print "Temp centre",Tcenter.mean()        
-        print "Temp 1 couronne",Tm1
-        print "Temp 2 couronne",Tm2        
-        
+        print "Temp centre",T1step[0,:].mean()
+        print "Temp 1 couronne",T1step[1,:].mean()
+        print "Temp 2 couronne",T1step[2,:].mean()    
         niter=niter+1
+        T[0,:]=Tnewc        
+
+# Boucle de convergence selon les angles
+    niter=0
+    convergence=True   
+    while convergence :
         
-#    Cable.plotMail(3,'k')
-#    Cable.plotData(3,data = heat_source,typeplot = 'Scatter')
-#    plt.title('Heat Source')
-#
-#    Cable.plotMail(4,'k')
-#    Cable.plotData(4,data = T,typeplot = 'Scatter')
-#    plt.title('Initial Temperature')
-#
-#    Cable.plotMail(5,'k')
-#    Cable.plotData(5,data = T1step,typeplot = 'Scatter')
-#    plt.title('Temperature 1st Step')
+        heat_source=fake_source(Cable,p=2,Qmax=0.)
+        rhs1=mul3cols(beta_m,1-beta,beta_p,T)
+        Toldc=T[0,:]
+        rhs1[0,:]=Toldc
+        rhs2=heat_source*dt/2/Material.Ther.density/Material.Ther.heat_capacity
+        rhs2[-1,:]=rhs2[-1,:]+eta_nj*Cable.CL.Tinf
+        rhs2[0,:]=0
+        rhs=rhs1+rhs2
+        T1step=np.empty_like(T)
+        for j in range(m+1) :
+            T1step[:,j]=Solution_Thomas(alpha_m[1:,j],1+alpha[:,j],alpha_p[:-1,j],rhs[:,j])
+    
+        Tnewc=calTcenter(Toldc,T1step)
+        
+        rR=np.linalg.norm(Toldc-Tnewc)        
+        convergence=(rR>1e-7)
+    
+        T[0,:]=Tnewc
+        print "niter",niter
+        print "residu",rR
+        print "Temp centre",T1step[0,:].mean()
+        print "Temp 1 couronne",T1step[1,:].mean()
+        print "Temp 2 couronne",T1step[2,:].mean()    
+        
+        niter=niter+1    
+    
+    Cable.plotMail(3,'k')
+    Cable.plotData(3,data = heat_source,typeplot = 'Scatter')
+    plt.title('Heat Source')
+
+    Cable.plotMail(4,'k')
+    Cable.plotData(4,data = Tinit_vec,typeplot = 'Scatter')
+    plt.title('Initial Temperature')
+
+    Cable.plotMail(5,'k')
+    Cable.plotData(5,data = T1step,typeplot = 'Scatter')
+    plt.title('Temperature 1st Step')
 #
 #    T1_mean=np.mean(T[1,:])
 #    T2_mean=np.mean(T[2,:])
@@ -359,9 +389,9 @@ if __name__  ==  '__main__' :
 #    rs = ro/ro                          # dimensionless surface radius, (-)
 #    rc = 1e-16/ro                       # dimensionless center radius, (-)
 #    
-#    z = np.arange(0, 1250, 0.1)         # range to evaluate the zeta, Bi equation
+#    z = np.arange(0, 3000, 0.0001)         # range to evaluate the zeta, Bi equation
 #    
-#    Fo_g = k[0,0]/Material.Ther.density/Material.Ther.heat_capacity*time/Cable.Geom.radius**2          # Fourier number, (-)
+#    Fo_g = k[0,0]/Material.Ther.density/Material.Ther.heat_capacity*time/10/Cable.Geom.radius**2          # Fourier number, (-)
 #    Bi_g = h*Cable.Geom.radius/k[0,0]          # Biot number, (-)
 #
 #    b = 1   # shape factor where 2 sphere, 1 cylinder, 0 slab
@@ -375,8 +405,8 @@ if __name__  ==  '__main__' :
 #    Tr_cyl = Cable.CL.Tinf + thetaR*(Tinit-Cable.CL.Tinf)    # convert theta to temperature in Kelvin, K
 #
 #    plt.figure()
-#    plt.plot(time,Tr_cyl,label='Surface')
-#    plt.plot(time,To_cyl,label='Center')
+#    plt.plot(time/10,Tr_cyl,label='Surface')
+#    plt.plot(time/10,To_cyl,label='Center')
 #    plt.grid()
 #    plt.xlabel(r"$\textrm{Time}\ \left[s\right]$")
 #    plt.ylabel(r"$\textrm{Temperature}\ \left[K\right]$")
