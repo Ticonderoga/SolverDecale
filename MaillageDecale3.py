@@ -10,7 +10,7 @@ from sympy.parsing.sympy_parser import parse_expr
 from ImportData import *
 from Routines.proprietes_fluides import C2K, K2C
 from Routines.AnToolsPyx import *
-from Routines.Heat_Transfer.analytical.funcTheta import theta
+from Routines.Heat_Transfer.analytical.funcTheta import theta as thetaAnal
 
 
 class Maillage(ImportData) :
@@ -163,7 +163,12 @@ def mul3cols(Bm,B,Bp,T) :
     result[:,-1]=(supB[:-1,:,-1].T*T[:,-2:]).sum(-1)
 
     return result
-   
+
+def mul3rows(Bm,B,Bp,T) :
+    result=mul3cols(Bm.T,B.T,Bp.T,T.T)
+    return result.T
+
+
 def calTcenter(Toldc,T) :
     Tm1=T[1,:].mean()
     Tm2=T[2,:].mean()
@@ -184,8 +189,8 @@ if __name__  ==  '__main__' :
     print "Maillage :"
     plt.close('all')
     Cable = Maillage('Cable.cfg',-3.,3.)
-    Cable.plotMail(2,'r')
-    Cable.plotData(2,1,'Mesh')
+    Cable.plotMail(1,'r')
+    Cable.plotData(1,1,'Mesh')
     print 30*"="
     print ""
     print "Matériau :"
@@ -325,44 +330,54 @@ if __name__  ==  '__main__' :
         Tnewc=calTcenter(Toldc,T1step)
         rR=np.linalg.norm(Toldc-Tnewc)        
         convergence=(rR>1e-7)
-    
-        print "niter",niter
-        print "residu",rR
-        print "Temp centre",T1step[0,:].mean()
-        print "Temp 1 couronne",T1step[1,:].mean()
-        print "Temp 2 couronne",T1step[2,:].mean()    
+         
+        print u"=============  Itération Rayons ========="
+        print 10*" "+"niter",niter
+        print 10*" "+"residu",rR
+        print 10*" "+"Temp centre",Tnewc.mean()
+        print 10*" "+"Temp 1 couronne",T1step[1,:].mean()
+        print 10*" "+"Temp 2 couronne",T1step[2,:].mean()    
         niter=niter+1
-        T[0,:]=Tnewc        
+        T[0,:]=Tnewc
 
 # Boucle de convergence selon les angles
+    T1step[0,:]=T[0,:]
+    Cable.plotMail(2,'k')
+    Cable.plotData(2,data = T1step,typeplot = 'Scatter')
+    plt.title('Temperature 1st Step 1 ')
+    
+    T=np.copy(T1step)
     niter=0
     convergence=True   
     while convergence :
         
         heat_source=fake_source(Cable,p=2,Qmax=0.)
-        rhs1=mul3cols(beta_m,1-beta,beta_p,T)
-        Toldc=T[0,:]
-        rhs1[0,:]=Toldc
+        rhs1=mul3rows(-alpha_m,1-alpha,-alpha_p,T)
         rhs2=heat_source*dt/2/Material.Ther.density/Material.Ther.heat_capacity
-        rhs2[-1,:]=rhs2[-1,:]+eta_nj*Cable.CL.Tinf
-        rhs2[0,:]=0
+        rhs2[-1,:]=rhs2[-1,:]+eta_nj*Cable.CL.Tinf    
         rhs=rhs1+rhs2
-        T1step=np.empty_like(T)
-        for j in range(m+1) :
-            T1step[:,j]=Solution_Thomas(alpha_m[1:,j],1+alpha[:,j],alpha_p[:-1,j],rhs[:,j])
-    
-        Tnewc=calTcenter(Toldc,T1step)
+        Toldc=T[0,:]
+        T2step=np.empty_like(T)
+#        TODO fix la boucle selon les angles
+        for i in range(1,n) :
+            T2step[i,:] = Solution_Thomas(-beta_m[i,1:],1+beta[i,:],-beta_p[i,:-1],rhs[i,:])
+        
+        T2step[-1,:] = Solution_Thomas(-beta_m[-1,1:],1+beta[-1,:]+eta_nj,-beta_p[-1,:-1],rhs[-1,:])
+        
+        Tnewc=calTcenter(Toldc,T2step)
         
         rR=np.linalg.norm(Toldc-Tnewc)        
-        convergence=(rR>1e-7)
+        convergence=(rR>1e-7) and niter<-1
     
-        T[0,:]=Tnewc
-        print "niter",niter
-        print "residu",rR
-        print "Temp centre",T1step[0,:].mean()
-        print "Temp 1 couronne",T1step[1,:].mean()
-        print "Temp 2 couronne",T1step[2,:].mean()    
+        print u"=============  Itération Angles ========="
+        print 10*" "+"niter",niter
+        print 10*" "+"residu",rR
+        print 10*" "+"Temp centre",Tnewc.mean()
+        print 10*" "+"Temp 1 couronne",T2step[1,:].mean()
+        print 10*" "+"Temp 2 couronne",T2step[2,:].mean()    
+        print 10*" "+"Temp ext couronne",T2step[-1,:].mean()    
         
+        T[0,:]=Tnewc
         niter=niter+1    
     
     Cable.plotMail(3,'k')
@@ -375,7 +390,7 @@ if __name__  ==  '__main__' :
 
     Cable.plotMail(5,'k')
     Cable.plotData(5,data = T1step,typeplot = 'Scatter')
-    plt.title('Temperature 1st Step')
+    plt.title('Temperature 1st Step 2')
 #
 #    T1_mean=np.mean(T[1,:])
 #    T2_mean=np.mean(T[2,:])
@@ -397,11 +412,11 @@ if __name__  ==  '__main__' :
 #    b = 1   # shape factor where 2 sphere, 1 cylinder, 0 slab
 #    
 #    # surface temperature where ro for outer surface
-#    thetaRo = theta(rs, b, z, Bi_g, Fo_g)   # dimensionless temperature profile
+#    thetaRo = thetaAnal(rs, b, z, Bi_g, Fo_g)   # dimensionless temperature profile
 #    To_cyl = Cable.CL.Tinf + thetaRo*(Tinit-Cable.CL.Tinf)   # convert theta to temperature in Kelvin, K
 #    
 #    # center temperature where r for center
-#    thetaR = theta(rc, b, z, Bi_g, Fo_g)    # dimensionless temperature profile
+#    thetaR = thetaAnal(rc, b, z, Bi_g, Fo_g)    # dimensionless temperature profile
 #    Tr_cyl = Cable.CL.Tinf + thetaR*(Tinit-Cable.CL.Tinf)    # convert theta to temperature in Kelvin, K
 #
 #    plt.figure()
