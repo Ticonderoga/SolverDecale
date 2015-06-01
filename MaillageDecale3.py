@@ -251,10 +251,11 @@ if __name__  ==  '__main__' :
     alpha_m = temp-temp2_m
     alpha_p = -temp-temp2_p
     alpha = temp2_m + temp2_p
-#    TODO Vérifier eta_nj
     eta_nj = 4*Bi*Foij[-1,:]/(1-fn_1)/(3+fn_1)
+    eta_ij = np.zeros_like(Tinit_vec)
+    eta_ij[-1,:] = eta_nj
     alpha_m_nj = -2*Foi_mj[-1,:]*(1+fn_1)/(1-fn_1)**2/(3+fn_1)
-    alpha[-1,:] = eta_nj-alpha_m_nj
+    alpha[-1,:] = -alpha_m_nj
     alpha[0,:] = 0
     alpha_m[0,:] = np.inf
     alpha_m[-1,:] = alpha_m_nj
@@ -325,7 +326,7 @@ if __name__  ==  '__main__' :
         rhs=rhs1+rhs2
         T1step=np.empty_like(T)
         for j in range(m+1) :
-            T1step[:,j]=Solution_Thomas(alpha_m[1:,j],1+alpha[:,j],alpha_p[:-1,j],rhs[:,j])
+            T1step[:,j]=Solution_Thomas(alpha_m[1:,j],1+alpha[:,j]+eta_ij[:,j],alpha_p[:-1,j],rhs[:,j])
     
         Tnewc=calTcenter(Toldc,T1step)
         rR=np.linalg.norm(Toldc-Tnewc)        
@@ -357,17 +358,17 @@ if __name__  ==  '__main__' :
         rhs2[-1,:]=rhs2[-1,:]+eta_nj*Cable.CL.Tinf    
         rhs=rhs1+rhs2
         Toldc=T[0,:]
-        T2step=np.empty_like(T)
+        T2step=np.ones_like(T)
 #        TODO fix la boucle selon les angles
-        for i in range(1,n) :
-            T2step[i,:] = Solution_Thomas(-beta_m[i,1:],1+beta[i,:],-beta_p[i,:-1],rhs[i,:])
+        for i in range(1,n+1) :
+            T2step[i,:] = Solution_Thomas(-beta_m[i,1:],1+beta[i,:]+eta_ij[i,:],-beta_p[i,:-1],rhs[i,:])
+#            print "rhs i=",i," ",rhs[i,:]
         
-        T2step[-1,:] = Solution_Thomas(-beta_m[-1,1:],1+beta[-1,:]+eta_nj,-beta_p[-1,:-1],rhs[-1,:])
         
         Tnewc=calTcenter(Toldc,T2step)
         
         rR=np.linalg.norm(Toldc-Tnewc)        
-        convergence=(rR>1e-7) and niter<-1
+        convergence=(rR>1e-7) 
     
         print u"=============  Itération Angles ========="
         print 10*" "+"niter",niter
@@ -380,6 +381,7 @@ if __name__  ==  '__main__' :
         T[0,:]=Tnewc
         niter=niter+1    
     
+    T2step[0,:]=T[0,:]
     Cable.plotMail(3,'k')
     Cable.plotData(3,data = heat_source,typeplot = 'Scatter')
     plt.title('Heat Source')
@@ -389,7 +391,7 @@ if __name__  ==  '__main__' :
     plt.title('Initial Temperature')
 
     Cable.plotMail(5,'k')
-    Cable.plotData(5,data = T1step,typeplot = 'Scatter')
+    Cable.plotData(5,data = T2step,typeplot = 'Scatter')
     plt.title('Temperature 1st Step 2')
 #
 #    T1_mean=np.mean(T[1,:])
