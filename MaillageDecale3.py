@@ -11,27 +11,14 @@ from ImportData import *
 from Routines.proprietes_fluides import C2K, K2C
 from Routines.AnToolsPyx import *
 from Routines.Heat_Transfer.analytical.funcTheta import theta as thetaAnal
-
+import time as tcpu
 
 class Maillage(ImportData) :
     # Classe de maillage initialisée via un fichier à importer
-    def __init__(self, data_file, pf=2., pg=3.) :
+    def __init__(self, data_file) :
         ImportData.__init__(self,data_file)
         
-        if vars(self).has_key('Mail') :
-            self.Mail.pf = pf
-            self.Mail.pg = pg
-        elif vars(self).has_key('Geom') :
-            self.Geom.typeGeom = typeGeom
-
         if vars(self).has_key('Func') and self.Geom.typeGeom == 'Polar' :
-
-#            D=Cable.Func.fsymb.atoms(Symbol) 
-#            for s in D:
-#                if s.name=='p' :
-#                    print "Yes"
-#                else :
-#                    print "Bad"
 
             dfsymb = diff(self.Func.fsymb,'x')
             df2symb = diff(self.Func.fsymb,'x',2)
@@ -178,17 +165,26 @@ def calTcenter(Toldc,T) :
             / (1+2*Foij[0,:]*(Cable.Func.C3(0)/dGama-Cable.Func.C2(0)/dGama**2))
     return Tcenter
 
+def calTcenter_half(Toldc,T) :
+    Tm1=T[1,:].mean()
+    Tm2=T[2,:].mean()
+    Tcenter=(Toldc+heat_source[0,:]*dt/2/Material.Ther.density/Material.Ther.heat_capacity \
+            + Foij[0,:]*(Cable.Func.C3(0)/dGama-2*Cable.Func.C2(0)/dGama**2)*Tm1 \
+            + Foij[0,:]*Cable.Func.C2(0)/dGama**2*Tm2) \
+            / (1+Foij[0,:]*(Cable.Func.C3(0)/dGama-Cable.Func.C2(0)/dGama**2))
+    return Tcenter
+
     
 if __name__  ==  '__main__' :
     np.seterr(divide='ignore')
     np.seterr(invalid='ignore')
-    
+    tinit_cpu=tcpu.time()
     plt.close('all')
     print 30*"="
     print ""
     print "Maillage :"
     plt.close('all')
-    Cable = Maillage('Cable.cfg',-3.,3.)
+    Cable = Maillage('Cable.cfg')
     Cable.plotMail(1,'r')
     Cable.plotData(1,1,'Mesh')
     print 30*"="
@@ -217,19 +213,13 @@ if __name__  ==  '__main__' :
     dGama = Cable.Mail.Gama[1]
     dPhi = Cable.Mail.Phi[1]
 
-#    plt.figure()
-#    plt.axis('equal')
-#    Cable.plotMail(3,'k')
-#    Cable.plotData(3,data = sij,typeplot = 'Scatter')
     Tinit = C2K(100.)
     Tinit_vec = Tinit*np.ones((Cable.Mail.nb_r,Cable.Mail.nb_angle))
     T = Tinit_vec
-#    On fait un vecteur T bruité
-#    T=T*(1+0.3*np.random.randn(Cable.Mail.nb_r,Cable.Mail.nb_angle))
 
     k = Material.Ther.conductivity(T)
      
-    tf = 200                 # secondes
+    tf = 1200                 # secondes
     nbdt = tf*1+1            # nb points en temps
     time,dt = np.linspace(0,tf,nbdt,retstep = True)
 
@@ -312,87 +302,71 @@ if __name__  ==  '__main__' :
     beta_p[-1,-1] = 0
     beta[-1,-1] = beta_m[-1,-1]
     
-# Boucle de convergence selon les rayons
     
     Toldc=Tinit
     saveTc=[Tinit]
     saveniter=[]
+    
     for t in time[1:] :
         niter=0
-        convergence=True    
-        while convergence :
-            heat_source=fake_source(Cable,p=2,Qmax=0.)
-            rhs1=mul3rows(-alpha_m,1-alpha,-alpha_p,T)
-            rhs2=heat_source*dt/2/Material.Ther.density/Material.Ther.heat_capacity
-            rhs2[-1,:]=rhs2[-1,:]+eta_nj*Cable.CL.Tinf    
-            rhs=rhs1+rhs2
-            T1step=np.ones_like(T)
-            # angles
-            for i in range(1,n+1) :
-                T1step[i,:] = Solution_Thomas(-beta_m[i,1:],1+beta[i,:]+eta_ij[i,:],-beta_p[i,:-1],rhs[i,:])
-            
-#            Tcentre=calTcenter(Toldc,T1step)
+        heat_source=fake_source(Cable,p=2,Qmax=0.)
+        rhs1=mul3rows(-alpha_m,1-alpha,-alpha_p,T)
+        rhs2=heat_source*dt/2/Material.Ther.density/Material.Ther.heat_capacity
+        rhs2[-1,:]=rhs2[-1,:]+eta_nj*Cable.CL.Tinf    
+        rhs=rhs1+rhs2
+        T1step=T
+        # angles
+        for i in range(1,n+1) :
+            T1step[i,:] = Solution_Thomas(-beta_m[i,1:],1+beta[i,:]+eta_ij[i,:],-beta_p[i,:-1],rhs[i,:])
 
-            rhs1=mul3cols(beta_m,1-beta,beta_p,T1step)
+        convergence_angle=True
+        while convergence_angle :            
+            Tnewc=calTcenter(Toldc,T1step)
+            rR=np.linalg.norm(Toldc-Tnewc)
+            convergence_angle=(rR>1e-4) #and niter<0         
+            Toldc=Tnewc
+            T1step[0,:]=Toldc
+        
+        
+        rhs1=mul3cols(beta_m,1-beta,beta_p,T1step)              
+        convergence_rayon=True
+        while convergence_rayon :
+            T2step=T1step            
+
             rhs1[0,:]=Toldc
             rhs2[0,:]=0
             rhs=rhs1+rhs2
-            T2step=np.ones_like(T)
+            
             # rayons            
+            Toldc2=Toldc
             for j in range(m+1) :
                 T2step[:,j]=Solution_Thomas(alpha_m[1:,j],1+alpha[:,j]+eta_ij[:,j],alpha_p[:-1,j],rhs[:,j])
-        
-            Tnewc=calTcenter(Toldc,T2step)
-            rR=np.linalg.norm(Toldc-Tnewc)        
-            convergence=(rR>1e-7) #and niter<0
-             
-            print u"=============  Itération Rayons ========="
-            print 10*" "+"niter",niter
-            print 10*" "+"residu",rR
-            print 10*" "+"Temp centre",Tnewc.mean()
-            print 10*" "+"Temp 1 couronne",T2step[1,:].mean()
-            print 10*" "+"Temp 2 couronne",T2step[2,:].mean()    
+                Tnewc=calTcenter(Toldc2,T2step)
+                Toldc2=Tnewc
+                rhs1[0,:]=Toldc2
+                rhs=rhs1+rhs2
+                
+            rR=np.linalg.norm(Toldc-Tnewc)
+            convergence_rayon=(rR>1e-4) #and niter<0
+            
+#            print u"=============  Itération Rayons ========="
+#            print 10*" "+"niter",niter
+#            print 10*" "+"residu",rR
+#            print 10*" "+"Temp centre",Tnewc.mean()
+#            print 10*" "+"Temp 1 couronne",T2step[1,:].mean()
+#            print 10*" "+"Temp 2 couronne",T2step[2,:].mean()    
+
             niter=niter+1
-    #        T[0,:]=Tnewc
             Toldc=Tnewc
-        
+            T2step[0,:]=Toldc
+            
         T=T2step
         Toldc=T2step[0,:]
         saveTc.append(Toldc[0])
         saveniter.append(niter)
+        print "time elapsed : ",int(t)," s"
         
-        
-# Boucle de convergence selon les angles
-#    T1step[0,:]=T[0,:]
-#    Cable.plotMail(2,'k')
-#    Cable.plotData(2,data = T1step,typeplot = 'Scatter')
-#    plt.title('Temperature 1st Step 1 ')
-#    
-#    T=np.copy(T1step)
-#    niter=0
-#    convergence=True   
-#    while convergence :
-        
-#            print "rhs i=",i," ",rhs[i,:]
-        
-        
-#        Tnewc=calTcenter(Toldc,T2step)
-#        
-#        rR=np.linalg.norm(Toldc-Tnewc)        
-#        convergence=(rR>1e-7) 
-#    
-#        print u"=============  Itération Angles ========="
-#        print 10*" "+"niter",niter
-#        print 10*" "+"residu",rR
-#        print 10*" "+"Temp centre",Tnewc.mean()
-#        print 10*" "+"Temp 1 couronne",T2step[1,:].mean()
-#        print 10*" "+"Temp 2 couronne",T2step[2,:].mean()    
-#        print 10*" "+"Temp ext couronne",T2step[-1,:].mean()    
-#        
-#        T[0,:]=Tnewc
-#        niter=niter+1    
-#    
-#    T2step[0,:]=T[0,:]
+    print tcpu.time()-tinit_cpu
     Cable.plotMail(3,'k')
     Cable.plotData(3,data = heat_source,typeplot = 'Scatter')
     plt.title('Heat Source')
@@ -404,12 +378,7 @@ if __name__  ==  '__main__' :
     Cable.plotMail(5,'k')
     Cable.plotData(5,data = T2step,typeplot = 'Scatter')
     plt.title('Temperature 1st Step 2')
-#
-#    T1_mean=np.mean(T[1,:])
-#    T2_mean=np.mean(T[2,:])
-#    print K2C(T1step.mean())
-#    
-#    
+
 ## _______________________________
 ##/    Analytical Calculations    \_______________________________
 ##     
