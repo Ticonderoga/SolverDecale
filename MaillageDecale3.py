@@ -220,7 +220,7 @@ if __name__  ==  '__main__' :
     k = Material.Ther.conductivity(T)
      
     tf = 1200                 # secondes
-    nbdt = tf*1+1            # nb points en temps
+    nbdt = tf*10+1            # nb points en temps
     time,dt = np.linspace(0,tf,nbdt,retstep = True)
 
     [ki,kj] = split_data(k)
