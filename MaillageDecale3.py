@@ -10,7 +10,7 @@ from sympy.parsing.sympy_parser import parse_expr
 from ImportData import *
 from Routines.proprietes_fluides import C2K, K2C
 from Routines.AnToolsPyx import *
-from Routines.Heat_Transfer.analytical.funcTheta import theta as thetaAnal
+#from Routines.Heat_Transfer.analytical.funcTheta import theta as thetaAnal
 import time as tcpu
 
 class Maillage(ImportData) :
@@ -64,16 +64,24 @@ class Maillage(ImportData) :
         # ne fonctionne qu'avec du Polar        
         # on trace ici seulement les points et non les mailles 
         
-        plt.figure(fignum)
-        plt.axis('equal')
-        plt.grid(True)
         if typeplot  ==  'Scatter' :
+            plt.figure(fignum)
+            plt.axis('equal')
+            plt.grid(True)                    
             plt.scatter(np.outer(Cable.Mail.Radius,np.cos(Cable.Mail.Theta)),\
                 np.outer(Cable.Mail.Radius,np.sin(Cable.Mail.Theta)),c = data)
             plt.colorbar()
         elif typeplot  ==  'Contour' :
-            print typeplot
-        elif typeplot  ==  'Mesh' : 
+            fig=plt.figure(fignum)
+            fig.add_subplot(111,projection='polar')
+            ax=plt.gca()
+            cData=ax.contourf(Cable.Mail.Theta,Cable.Mail.Radius, data,100)
+            plt.colorbar(mappable=cData)
+
+        elif typeplot  ==  'Mesh' :
+            plt.figure(fignum)
+            plt.axis('equal')
+            plt.grid(True)
             for r in self.Mail.Radius :
                 plt.scatter(r*np.cos(self.Mail.Theta), \
                     r*np.sin(self.Mail.Theta),c = 'b')
@@ -157,17 +165,17 @@ def mul3rows(Bm,B,Bp,T) :
 
 
 def calTcenter(Toldc,T) :
-    Tm1=T[1,:].mean()
-    Tm2=T[2,:].mean()
-    Tcenter=(Toldc+heat_source[0,:]*dt/Material.Ther.density/Material.Ther.heat_capacity \
-            + 2*Foij[0,:]*(Cable.Func.C3(0)/dGama-2*Cable.Func.C2(0)/dGama**2)*Tm1 \
-            + 2*Foij[0,:]*Cable.Func.C2(0)/dGama**2*Tm2) \
-            / (1+2*Foij[0,:]*(Cable.Func.C3(0)/dGama-Cable.Func.C2(0)/dGama**2))
+    Tm1,Tm2=Mean_rings(T)
+    Tcenter=(Toldc+heat_source[0,0]*dt/Material.Ther.density/Material.Ther.heat_capacity \
+            + 2*Foij[0,0]*(Cable.Func.C3(0)/dGama-2*Cable.Func.C2(0)/dGama**2)*Tm1 \
+            + 2*Foij[0,0]*Cable.Func.C2(0)/dGama**2*Tm2) \
+            / (1+2*Foij[0,0]*(Cable.Func.C3(0)/dGama-Cable.Func.C2(0)/dGama**2))
     return Tcenter
 
 def calTcenter_half(Toldc,T) :
-    Tm1=T[1,:].mean()
-    Tm2=T[2,:].mean()
+#    Tm1=T[1,:].mean()
+#    Tm2=T[2,:].mean()
+    Tm1,Tm2=T[1:3,:].mean(1)
     Tcenter=(Toldc+heat_source[0,:]*dt/2/Material.Ther.density/Material.Ther.heat_capacity \
             + Foij[0,:]*(Cable.Func.C3(0)/dGama-2*Cable.Func.C2(0)/dGama**2)*Tm1 \
             + Foij[0,:]*Cable.Func.C2(0)/dGama**2*Tm2) \
@@ -215,14 +223,20 @@ if __name__  ==  '__main__' :
 
     Tinit = C2K(100.)
     Tinit_vec = Tinit*np.ones((Cable.Mail.nb_r,Cable.Mail.nb_angle))
-    T = Tinit_vec
-
+    T = np.copy(Tinit_vec)
+    
     k = Material.Ther.conductivity(T)
      
     tf = 1200                 # secondes
     nbdt = tf*10+1            # nb points en temps
     time,dt = np.linspace(0,tf,nbdt,retstep = True)
-
+    interval_savet = 60
+    savetime=time[time%interval_savet==0]
+    nbsavet=savetime.size
+    SaveT=np.empty((Cable.Mail.nb_r,Cable.Mail.nb_angle, nbsavet))
+    SaveT[:,:,0]=T
+    iteration_time=0
+    
     [ki,kj] = split_data(k)
     Foij = k/Material.Ther.density/Material.Ther.heat_capacity*dt/Cable.Geom.radius**2
     
@@ -304,8 +318,9 @@ if __name__  ==  '__main__' :
     
     
     Toldc=Tinit
-    saveTc=[Tinit]
+    
     saveniter=[]
+    
     
     for t in time[1:] :
         niter=0
@@ -322,13 +337,14 @@ if __name__  ==  '__main__' :
         convergence_angle=True
         while convergence_angle :            
             Tnewc=calTcenter(Toldc,T1step)
-            rR=np.linalg.norm(Toldc-Tnewc)
-            convergence_angle=(rR>1e-4) #and niter<0         
+            rA=abs(Toldc-Tnewc)
+            convergence_angle=(rA>1e-4) #and niter<0         
             Toldc=Tnewc
             T1step[0,:]=Toldc
-        
+            niter=niter+1
         
         rhs1=mul3cols(beta_m,1-beta,beta_p,T1step)              
+        niter_rayon=0
         convergence_rayon=True
         while convergence_rayon :
             T2step=T1step            
@@ -346,47 +362,48 @@ if __name__  ==  '__main__' :
                 rhs1[0,:]=Toldc2
                 rhs=rhs1+rhs2
                 
-            rR=np.linalg.norm(Toldc-Tnewc)
+            rR=abs(Toldc-Tnewc)
             convergence_rayon=(rR>1e-4) #and niter<0
-            
-#            print u"=============  Itération Rayons ========="
-#            print 10*" "+"niter",niter
-#            print 10*" "+"residu",rR
-#            print 10*" "+"Temp centre",Tnewc.mean()
-#            print 10*" "+"Temp 1 couronne",T2step[1,:].mean()
-#            print 10*" "+"Temp 2 couronne",T2step[2,:].mean()    
 
-            niter=niter+1
+            niter_rayon=niter_rayon+1
             Toldc=Tnewc
             T2step[0,:]=Toldc
             
         T=T2step
-        Toldc=T2step[0,:]
-        saveTc.append(Toldc[0])
-        saveniter.append(niter)
-        print "time elapsed : ",int(t)," s"
+        Toldc=T2step[0,0]
+        
+        #    __________________________
+        #___/ Sauvegarde des résultats \________________________________
+        # On sauve toutes les interval_savet s
+        
+        if (t%interval_savet)==0 :
+            print "time elapsed : ",t," s"
+            iteration_time=iteration_time+1    
+            SaveT[:,:,iteration_time]=T
+
+
         
     print tcpu.time()-tinit_cpu
-    Cable.plotMail(3,'k')
-    Cable.plotData(3,data = heat_source,typeplot = 'Scatter')
+#    Cable.plotMail(3,'k')
+    Cable.plotData(3,data = heat_source,typeplot = 'Contour')
     plt.title('Heat Source')
 
-    Cable.plotMail(4,'k')
-    Cable.plotData(4,data = Tinit_vec,typeplot = 'Scatter')
+#    Cable.plotMail(4,'k')
+    Cable.plotData(4,data = Tinit_vec,typeplot = 'Contour')
     plt.title('Initial Temperature')
 
-    Cable.plotMail(5,'k')
-    Cable.plotData(5,data = T2step,typeplot = 'Scatter')
+#    Cable.plotMail(5,'k')
+    Cable.plotData(5,data = T,typeplot = 'Contour')
     plt.title('Temperature 1st Step 2')
 
 ## _______________________________
 ##/    Analytical Calculations    \_______________________________
 ##     
     Ta=Cable.CL.Tinf+(Tinit-Cable.CL.Tinf)*\
-        np.exp(-h*time/Material.Ther.density/Material.Ther.heat_capacity/Cable.Geom.radius*2)
-    plt.figure()
-    plt.plot(time,Ta,'r',label='Analytic')
-    plt.plot(time,saveTc,'g',label='Finite Differences')
+        np.exp(-h*savetime/Material.Ther.density/Material.Ther.heat_capacity/Cable.Geom.radius*2)
+    plt.figure(6)
+    plt.plot(savetime,Ta,'r',label='Analytic')
+    plt.plot(savetime,SaveT[0,0,:],'g',label='Finite Differences')
     plt.grid(True)
     plt.legend()
     plt.title('Center temperature')
