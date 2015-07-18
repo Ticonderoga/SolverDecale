@@ -4,6 +4,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as pltp
+import matplotlib.tri as tri
 #import lambdify, exp, Symbol, parse_expr, diff
 from sympy import lambdify, exp, Symbol, diff, pprint
 from sympy.parsing.sympy_parser import parse_expr
@@ -12,6 +13,7 @@ from Routines.proprietes_fluides import C2K, K2C
 from Routines.AnToolsPyx import *
 #from Routines.Heat_Transfer.analytical.funcTheta import theta as thetaAnal
 import time as tcpu
+import scipy.interpolate as scint
 
 class Maillage(ImportData) :
     # Classe de maillage initialisée via un fichier à importer
@@ -57,31 +59,43 @@ class Maillage(ImportData) :
             self.Mail.val_g = self.Func.g(self.Mail.Phi)
             self.Mail.Theta = self.Mail.val_g*self.Geom.angle
             self.Mail.diffTheta = np.diff(self.Mail.Theta)
+            
+            self.Mail.grid_R,self.Mail.grid_Theta = \
+                np.meshgrid(self.Mail.Radius,self.Mail.Theta)
+            self.trigint_R,self.trigint_Theta = np.meshgrid( \
+                np.linspace(0,Cable.Geom.radius,100), \
+                np.linspace(0,Cable.Geom.angle,100))
+            self.trigint_R,self.trigint_Theta = \
+                self.trigint_R.flatten(), \
+                self.trigint_Theta.flatten()
+            
+            self.Mail.triang=tri.Triangulation( \
+                self.trigint_R*np.cos(self.trigint_Theta), \
+                self.trigint_R*np.sin(self.trigint_Theta))
+
         elif vars(self).has_key('Func') and self.Geom.typeGeom == 'Rectangular' :
             print 'TODO'
     
     def plotData(self,fignum,data = [],typeplot = 'Mesh') :
         # ne fonctionne qu'avec du Polar        
         # on trace ici seulement les points et non les mailles 
+        plt.figure(fignum)
+        plt.axis('equal')
+        plt.grid(True)                    
         
         if typeplot  ==  'Scatter' :
-            plt.figure(fignum)
-            plt.axis('equal')
-            plt.grid(True)                    
-            plt.scatter(np.outer(Cable.Mail.Radius,np.cos(Cable.Mail.Theta)),\
-                np.outer(Cable.Mail.Radius,np.sin(Cable.Mail.Theta)),c = data)
-            plt.colorbar()
+            plt.scatter(np.outer(self.Mail.Radius,np.cos(self.Mail.Theta)),\
+                np.outer(self.Mail.Radius,np.sin(self.Mail.Theta)),c = data)
+            if len(plt.gcf().axes)==1 :
+                plt.colorbar()
         elif typeplot  ==  'Contour' :
-            fig=plt.figure(fignum)
-            fig.add_subplot(111,projection='polar')
-            ax=plt.gca()
-            cData=ax.contourf(Cable.Mail.Theta,Cable.Mail.Radius, data,100)
-            plt.colorbar(mappable=cData)
-
+            data_trigint=scint.griddata((self.Mail.grid_R.flatten(),\
+                self.Mail.grid_Theta.flatten()),data.T.flatten(),\
+                (self.trigint_R,self.trigint_Theta))
+            plt.tricontourf(self.Mail.triang,data_trigint.flatten(),100)
+            if len(plt.gcf().axes)==1 :
+                plt.colorbar()
         elif typeplot  ==  'Mesh' :
-            plt.figure(fignum)
-            plt.axis('equal')
-            plt.grid(True)
             for r in self.Mail.Radius :
                 plt.scatter(r*np.cos(self.Mail.Theta), \
                     r*np.sin(self.Mail.Theta),c = 'b')
@@ -338,7 +352,7 @@ if __name__  ==  '__main__' :
         while convergence_angle :            
             Tnewc=calTcenter(Toldc,T1step)
             rA=abs(Toldc-Tnewc)
-            convergence_angle=(rA>1e-4) #and niter<0         
+            convergence_angle=(rA>1e-8) #and niter<0         
             Toldc=Tnewc
             T1step[0,:]=Toldc
             niter=niter+1
@@ -363,7 +377,7 @@ if __name__  ==  '__main__' :
                 rhs=rhs1+rhs2
                 
             rR=abs(Toldc-Tnewc)
-            convergence_rayon=(rR>1e-4) #and niter<0
+            convergence_rayon=(rR>1e-8) #and niter<0
 
             niter_rayon=niter_rayon+1
             Toldc=Tnewc
@@ -392,8 +406,9 @@ if __name__  ==  '__main__' :
     Cable.plotData(4,data = Tinit_vec,typeplot = 'Contour')
     plt.title('Initial Temperature')
 
-#    Cable.plotMail(5,'k')
+    Cable.plotMail(5,'k')
     Cable.plotData(5,data = T,typeplot = 'Contour')
+    Cable.plotData(5,data = T,typeplot = 'Scatter')    
     plt.title('Temperature 1st Step 2')
 
 ## _______________________________
