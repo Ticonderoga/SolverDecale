@@ -63,8 +63,8 @@ class Maillage(ImportData) :
             self.Mail.grid_R,self.Mail.grid_Theta = \
                 np.meshgrid(self.Mail.Radius,self.Mail.Theta)
             self.trigint_R,self.trigint_Theta = np.meshgrid( \
-                np.linspace(0,Cable.Geom.radius,100), \
-                np.linspace(0,Cable.Geom.angle,100))
+                np.linspace(0,self.Geom.radius,100), \
+                np.linspace(0,self.Geom.angle,100))
             self.trigint_R,self.trigint_Theta = \
                 self.trigint_R.flatten(), \
                 self.trigint_Theta.flatten()
@@ -338,7 +338,7 @@ if __name__  ==  '__main__' :
     
     for t in time[1:] :
         niter=0
-        heat_source=fake_source(Cable,p=2,Qmax=0.)
+        heat_source=fake_source(Cable,p=2,Qmax=100000.)
         rhs1=mul3rows(-alpha_m,1-alpha,-alpha_p,T)
         rhs2=heat_source*dt/2/Material.Ther.density/Material.Ther.heat_capacity
         rhs2[-1,:]=rhs2[-1,:]+eta_nj*Cable.CL.Tinf    
@@ -352,7 +352,7 @@ if __name__  ==  '__main__' :
         while convergence_angle :            
             Tnewc=calTcenter(Toldc,T1step)
             rA=abs(Toldc-Tnewc)
-            convergence_angle=(rA>1e-8) #and niter<0         
+            convergence_angle=(rA>1e-6) #and niter<0         
             Toldc=Tnewc
             T1step[0,:]=Toldc
             niter=niter+1
@@ -377,7 +377,7 @@ if __name__  ==  '__main__' :
                 rhs=rhs1+rhs2
                 
             rR=abs(Toldc-Tnewc)
-            convergence_rayon=(rR>1e-8) #and niter<0
+            convergence_rayon=(rR>1e-6) #and niter<0
 
             niter_rayon=niter_rayon+1
             Toldc=Tnewc
