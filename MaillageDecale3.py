@@ -247,7 +247,7 @@ if __name__  ==  '__main__' :
     interval_savet = 60
     savetime=time[time%interval_savet==0]
     nbsavet=savetime.size
-    SaveT=np.empty((Cable.Mail.nb_r,Cable.Mail.nb_angle, nbsavet))
+    SaveT=np.empty((int(Cable.Mail.nb_r),int(Cable.Mail.nb_angle), nbsavet))
     SaveT[:,:,0]=T
     iteration_time=0
     
