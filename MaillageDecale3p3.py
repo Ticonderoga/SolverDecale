@@ -8,9 +8,9 @@ import matplotlib.tri as tri
 #import lambdify, exp, Symbol, parse_expr, diff
 from sympy import lambdify, exp, Symbol, diff, pprint
 from sympy.parsing.sympy_parser import parse_expr
-from ImportData import *
+from ImportDatap3 import *
 from Routines.proprietes_fluides import C2K, K2C
-from Routines.AnToolsPyx import *
+from Routines.AnToolsPyxp3 import *
 #from Routines.Heat_Transfer.analytical.funcTheta import theta as thetaAnal
 import time as tcpu
 import scipy.interpolate as scint
@@ -20,7 +20,7 @@ class Maillage(ImportData) :
     def __init__(self, data_file) :
         ImportData.__init__(self,data_file)
         
-        if vars(self).has_key('Func') and self.Geom.typeGeom == 'Polar' :
+        if 'Func' in vars(self)  and self.Geom.typeGeom == 'Polar' :
 
             dfsymb = diff(self.Func.fsymb,'x')
             df2symb = diff(self.Func.fsymb,'x',2)
@@ -73,7 +73,7 @@ class Maillage(ImportData) :
                 self.trigint_R*np.cos(self.trigint_Theta), \
                 self.trigint_R*np.sin(self.trigint_Theta))
 
-        elif vars(self).has_key('Func') and self.Geom.typeGeom == 'Rectangular' :
+        elif 'Func' in vars(self) and self.Geom.typeGeom == 'Rectangular' :
             print('TODO')
     
     def plotData(self,fignum,data = [],typeplot = 'Mesh') :

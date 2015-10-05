@@ -66,7 +66,6 @@ class Section(object) :
         typeDyn=keywords.get('typeDyn')
         All_interp=['linear', 'nearest', 'zero', 'slinear', 'quadratic', 'cubic']
         if typeDyn == 'poly' :
-            print("param",param)
             return np.polyval(param, arg)
         elif All_interp.count(typeDyn) : # il s'agit d'interpolation 
             # i.e. kind peut prendre une des valeurs suivantes
