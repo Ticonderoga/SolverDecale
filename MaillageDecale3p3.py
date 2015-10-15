@@ -14,6 +14,7 @@ from Routines.AnToolsPyxp3 import *
 #from Routines.Heat_Transfer.analytical.funcTheta import theta as thetaAnal
 import time as tcpu
 import scipy.interpolate as scint
+import scipy.sparse as scsp
 
 class Maillage(ImportData) :
     # Classe de maillage initialisée via un fichier à importer
@@ -196,6 +197,15 @@ def calTcenter_half(Toldc,T) :
             / (1+Foij[0,:]*(Cable.Func.C3(0)/dGama-Cable.Func.C2(0)/dGama**2))
     return Tcenter
 
+def mat2vec(M) :
+    '''A way to transform a matrix into vector'''
+    return np.r_[M[0,0],M[1:,:].flatten('F')]
+    
+def vec2mat(V,shape) :
+    '''A way to transform a vector into matrix'''
+    n,m=shape
+    return np.r_[V[0]*np.ones((1,m+1)),V[1:].reshape((n,m+1),order='F')]
+
     
 if __name__  ==  '__main__' :
     np.seterr(divide='ignore')
@@ -235,23 +245,34 @@ if __name__  ==  '__main__' :
     dGama = Cable.Mail.Gama[1]
     dPhi = Cable.Mail.Phi[1]
 
+
+    tf = 12                # secondes
+    nbdt = tf*10+1            # nb points en temps
+    time,dt = np.linspace(0,tf,nbdt,retstep = True)
+    interval_savet = 60
+    savetime=time[time%interval_savet==0]
+    nbsavet=savetime.size
+
+
+
+
+    
+    
+#=================================================================
+#    Problème Thermique
+#=================================================================
+
     Tinit = C2K(100.)
     Tinit_vec = Tinit*np.ones((Cable.Mail.nb_r,Cable.Mail.nb_angle))
     T = np.copy(Tinit_vec)
     
     k = Material.Ther.conductivity(T)
      
-    tf = 1200                 # secondes
-    nbdt = tf*10+1            # nb points en temps
-    time,dt = np.linspace(0,tf,nbdt,retstep = True)
-    interval_savet = 60
-    savetime=time[time%interval_savet==0]
-    nbsavet=savetime.size
     SaveT=np.empty((int(Cable.Mail.nb_r),int(Cable.Mail.nb_angle), nbsavet))
     SaveT[:,:,0]=T
     iteration_time=0
     
-    [ki,kj] = split_data(k)
+#    [ki,kj] = split_data(k)
     Foij = k/Material.Ther.density/Material.Ther.heat_capacity*dt/Cable.Geom.radius**2
     
     Foi_mj,Foi_pj,Foij_m,Foij_p=padding(Foij)
@@ -259,6 +280,8 @@ if __name__  ==  '__main__' :
 #    TODO Vérifier Calcul de Biot radius ou delta_r
     h = Cable.CL.heat_transfer_coefficient
     Bi = h*Cable.Geom.radius/k[-1,:]
+    
+
 # ____________________    
 #/    Calcul alpha    \_______________________________
 
@@ -397,7 +420,48 @@ if __name__  ==  '__main__' :
 
 
         
-    print(tcpu.time()-tinit_cpu)
+    print("Temps total :"+"{: .3f}".format(tcpu.time()-tinit_cpu))
+    
+
+#=================================================================
+#    Problème Electrique
+#=================================================================
+    Vinit = 0.
+    Vinit_mat = Vinit*np.ones((Cable.Mail.nb_r,Cable.Mail.nb_angle))
+    Vinit_vec=mat2vec(Vinit_mat)
+    V = np.copy(Vinit_vec)
+    sigij = 1./(Material.Elec.resistivity+Material.Elec.alpha*(T-Material.Elec.Tref))
+    sigi_mj,sigi_pj,sigij_m,sigij_p=padding(sigij)
+    indx_cr1=np.arange(1,(m+1)*n+1,n)
+    indx_cr2=np.arange(2,(m+1)*n+1,n)
+    
+    data=np.ones((1,(m+1)*n+1)).repeat(5, axis=0)
+    offsets=[-n,-1,0,1,n]
+    Melec=scsp.dia_matrix((data, offsets), shape=((m+1)*n+1, (m+1)*n+1))
+
+
+# ____________________    
+#/    Calcul delta    \_______________________________
+
+    temp = Cable.Func.C1(Cable.Mail.Gama)[:,np.newaxis]*sigij/2./dGama
+    temp2_m = Cable.Func.C2(Cable.Mail.Gama)[:,np.newaxis]*sigi_mj/dGama**2
+    temp2_p = Cable.Func.C2(Cable.Mail.Gama)[:,np.newaxis]*sigi_pj/dGama**2
+    
+    delta_m = -temp+temp2_m
+    delta_p =  temp+temp2_p
+    
+
+#    eta_nj = 4*Bi*Foij[-1,:]/(1-fn_1)/(3+fn_1)
+#    eta_ij = np.zeros_like(Tinit_vec)
+#    eta_ij[-1,:] = eta_nj
+#    alpha_m_nj = -2*Foi_mj[-1,:]*(1+fn_1)/(1-fn_1)**2/(3+fn_1)
+#    alpha[-1,:] = -alpha_m_nj
+#    alpha[0,:] = 0
+#    alpha_m[0,:] = np.inf
+#    alpha_m[-1,:] = alpha_m_nj
+#    alpha_p[0,:] = 0
+#    alpha_p[-1,:] = np.inf
+
 #    Cable.plotMail(3,'k')
     Cable.plotData(3,data = heat_source,typeplot = 'Contour')
     plt.title('Heat Source')
