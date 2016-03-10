@@ -15,6 +15,8 @@ from Routines.AnToolsPyxp3 import *
 import time as tcpu
 import scipy.interpolate as scint
 import scipy.sparse as scsp
+from concurrent.futures import ThreadPoolExecutor
+import multiprocessing
 
 class Maillage(ImportData) :
     # Classe de maillage initialisée via un fichier à importer
@@ -172,19 +174,19 @@ def fake_source(Wire,p=2,Qmax=0.) :
     
     return Qmax*(1-np.exp(p*(2*R-d)/2/R))/(1-np.exp(p))
     
-#def mul3cols(Bm,B,Bp,T) :
-#    n,m=T.shape
-#    supB=np.array([Bm,B,Bp])
-#    result=np.empty_like(T)    
-#    for j in range(1,m-1) :
-#        M1=supB[:,:,j].T
-#        M2=T[:,j-1:j+2]
-#        result[:,j]=(M1*M2).sum(-1)
-#    
-#    result[:,0]=(supB[1:,:,0].T*T[:,0:2]).sum(-1)
-#    result[:,-1]=(supB[:-1,:,-1].T*T[:,-2:]).sum(-1)
-#
-#    return result
+def mul3cols(Bm,B,Bp,T) :
+    n,m=T.shape
+    supB=np.array([Bm,B,Bp])
+    result=np.empty_like(T)    
+    for j in range(1,m-1) :
+        M1=supB[:,:,j].T
+        M2=T[:,j-1:j+2]
+        result[:,j]=(M1*M2).sum(-1)
+    
+    result[:,0]=(supB[1:,:,0].T*T[:,0:2]).sum(-1)
+    result[:,-1]=(supB[:-1,:,-1].T*T[:,-2:]).sum(-1)
+
+    return result
 
 def mul3rows(Bm,B,Bp,T) :
     result=mul3cols(Bm.T,B.T,Bp.T,T.T)
@@ -200,6 +202,16 @@ def calTcenter(Toldc,T) :
             + 2*Foij[0,0]*vC2/dGama**2*Tm2) \
             / (1+2*Foij[0,0]*(vC3/dGama-vC2/dGama**2))
     return Tcenter
+
+#def calTcenter_half(Toldc,T) :
+##    Tm1=T[1,:].mean()
+##    Tm2=T[2,:].mean()
+#    Tm1,Tm2=T[1:3,:].mean(1)
+#    Tcenter=(Toldc+heat_source[0,:]*dt/2/Material.Ther.density/Material.Ther.heat_capacity \
+#            + Foij[0,:]*(Cable.Func.C3(0)/dGama-2*Cable.Func.C2(0)/dGama**2)*Tm1 \
+#            + Foij[0,:]*Cable.Func.C2(0)/dGama**2*Tm2) \
+#            / (1+Foij[0,:]*(Cable.Func.C3(0)/dGama-Cable.Func.C2(0)/dGama**2))
+#    return Tcenter
 
 def mat2vec(M) :
     '''A way to transform a matrix into vector'''
@@ -357,8 +369,23 @@ if __name__  ==  '__main__' :
     beta_p[-1,-1] = 0
     beta[-1,-1] = beta_m[-1,-1]
     
+    
     Toldc=Tinit
     
+    saveniter=[]
+    
+    save_rA=[]
+    save_rR=[]
+
+    max_workers=min(n,m,multiprocessing.cpu_count())
+    Vm_split_Horiz=np.array_split(-beta_m[1:,1:],max_workers)
+    V_split_Horiz=np.array_split(1+beta[1:,:]+eta_ij[1:,:],max_workers)
+    Vp_split_Horiz=np.array_split(-beta_p[1:,:-1],max_workers)
+
+    
+    tmp=np.array([e.shape[0] for e in V_split_Horiz])
+    indx_split_Horiz=list(zip(np.cumsum(tmp)-tmp+1,np.cumsum(tmp)+1))
+
     for t in time[1:] :
         niter=0
         heat_source=fake_source(Cable,p=2,Qmax=100000.)
@@ -366,38 +393,64 @@ if __name__  ==  '__main__' :
         rhs2=heat_source*dt/2/Material.Ther.density/Material.Ther.heat_capacity
         rhs2[-1,:]=rhs2[-1,:]+eta_nj*Cable.CL.Tinf    
         rhs=rhs1+rhs2
+        rhs_split_Horiz=np.array_split(rhs[1:,:],max_workers)
 
         T1step=T
 
-        # angles        
-        T1step[1:,]=Solve_bunch_tridiag(-beta_m[1:,1:],1+beta[1:,:]+eta_ij[1:,:],-beta_p[1:,:-1],rhs[1:,:])
+        # angles
+        with ThreadPoolExecutor(max_workers=max_workers) as exe :
+
+            jobs=[exe.submit(Solve_bunch_tridiag,b,a,c,f) for b,a,c,f in \
+                zip(Vm_split_Horiz,V_split_Horiz,Vp_split_Horiz,rhs_split_Horiz)]
+
+        for indices,job in zip(indx_split_Horiz,jobs) :
+            T1step[indices[0]:indices[1],:]=job.result()
+        
+#        T1step[1:,]=Solve_bunch_tridiag(-beta_m[1:,1:],1+beta[1:,:]+eta_ij[1:,:],-beta_p[1:,:-1],rhs[1:,:])
 
         convergence_angle=True
         while convergence_angle :            
             Tnewc=calTcenter(Toldc,T1step)
             rA=abs(Toldc-Tnewc)
-            convergence_angle=(rA>1e-6) 
+            convergence_angle=(rA>1e-6) #and niter<0         
             Toldc=Tnewc
             T1step[0,:]=Toldc
             niter=niter+1
+#            save_rA.append(rA)
             
-        rhs1=mul3cols(beta_m,1-beta,beta_p,T1step)    
-        
-        # rayons            
+        rhs1=mul3cols(beta_m,1-beta,beta_p,T1step)              
+        niter_rayon=0
         convergence_rayon=True
         while convergence_rayon :
             T2step=T1step            
+
             rhs1[0,:]=Toldc
             rhs2[0,:]=0
             rhs=rhs1+rhs2
+            
+            # rayons            
             Toldc2=Toldc
+            
+#            for j in range(m+1) :
+#                T2step[:,j]=Solvetridiag(alpha_m[1:,j],1+alpha[:,j]+eta_ij[:,j],alpha_p[:-1,j],rhs[:,j])
+#                Tnewc=calTcenter(Toldc2,T2step)
+#                Toldc2=Tnewc
+#                rhs1[0,:]=Toldc2
+#                rhs=rhs1+rhs2
+#            for j in range(m+1) :
+#                T2step[:,j]=Solvetridiag(alpha_m[1:,j],1+alpha[:,j]+eta_ij[:,j],alpha_p[:-1,j],rhs[:,j])
+#            
             T2step=Solve_bunch_tridiag(alpha_m[1:,:].T,1+alpha.T+eta_ij.T,alpha_p[:-1,:].T,rhs.T).T
             Tnewc=calTcenter(Toldc2,T2step)
             Toldc2=Tnewc
             rhs1[0,:]=Toldc2
             rhs=rhs1+rhs2
+                
+
             rR=abs(Toldc-Tnewc)
-            convergence_rayon=(rR>1e-6)
+            convergence_rayon=(rR>1e-6) #and niter<0
+#            save_rR.append(rR)
+            niter_rayon=niter_rayon+1
             Toldc=Tnewc
             T2step[0,:]=Toldc
             
@@ -446,6 +499,16 @@ if __name__  ==  '__main__' :
     delta_p =  temp+temp2_p
     
 
+#    eta_nj = 4*Bi*Foij[-1,:]/(1-fn_1)/(3+fn_1)
+#    eta_ij = np.zeros_like(Tinit_vec)
+#    eta_ij[-1,:] = eta_nj
+#    alpha_m_nj = -2*Foi_mj[-1,:]*(1+fn_1)/(1-fn_1)**2/(3+fn_1)
+#    alpha[-1,:] = -alpha_m_nj
+#    alpha[0,:] = 0
+#    alpha_m[0,:] = np.inf
+#    alpha_m[-1,:] = alpha_m_nj
+#    alpha_p[0,:] = 0
+#    alpha_p[-1,:] = np.inf
 
 #    Cable.plotMail(3,'k')
     Cable.plotData(3,data = heat_source,typeplot = 'Contour')
