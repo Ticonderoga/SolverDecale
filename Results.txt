@@ -1,0 +1,54 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Wed May 18 11:16:31 2016
+
+@author: phil
+"""
+
+100 x 200 multiproc
+
+time elapsed :  60.0  s
+time elapsed :  120.0  s
+time elapsed :  180.0  s
+time elapsed :  240.0  s
+time elapsed :  300.0  s
+time elapsed :  360.0  s
+time elapsed :  420.0  s
+time elapsed :  480.0  s
+time elapsed :  540.0  s
+time elapsed :  600.0  s
+time elapsed :  660.0  s
+time elapsed :  720.0  s
+time elapsed :  780.0  s
+time elapsed :  840.0  s
+time elapsed :  900.0  s
+time elapsed :  960.0  s
+time elapsed :  1020.0  s
+time elapsed :  1080.0  s
+time elapsed :  1140.0  s
+time elapsed :  1200.0  s
+Temps total : 695.087
+
+100 x 200 monoproc
+
+time elapsed :  60.0  s
+time elapsed :  120.0  s
+time elapsed :  180.0  s
+time elapsed :  240.0  s
+time elapsed :  300.0  s
+time elapsed :  360.0  s
+time elapsed :  420.0  s
+time elapsed :  480.0  s
+time elapsed :  540.0  s
+time elapsed :  600.0  s
+time elapsed :  660.0  s
+time elapsed :  720.0  s
+time elapsed :  780.0  s
+time elapsed :  840.0  s
+time elapsed :  900.0  s
+time elapsed :  960.0  s
+time elapsed :  1020.0  s
+time elapsed :  1080.0  s
+time elapsed :  1140.0  s
+time elapsed :  1200.0  s
+Temps total : 356.748
