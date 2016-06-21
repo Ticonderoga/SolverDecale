@@ -32,7 +32,7 @@ if __name__ == '__main__':
     g=np.linspace(0,1,n)
     # coeff pour raffiner le maillage    
     p=10
-    g0=0.68 # position réelle où l'on veut affiner
+    g0=0.5 # position réelle où l'on veut affiner
     x0=1./2./p*np.log((1+(np.exp(p)-1)*g0)/(1+(np.exp(-p)-1)*g0))
     A=np.sinh(p*x0)
     # x le maillage réel
@@ -42,5 +42,5 @@ if __name__ == '__main__':
         plt.plot([0,1],[xi,xi],'k-')
         plt.plot([gi,gi],[0,1],'k-')
     #~ plt.grid()
-    plt.ylabel('maillage reel $x$')
-    plt.xlabel('maillage regulier $\gamma$')
+    plt.ylabel(u'maillage réel $x$')
+    plt.xlabel(u'maillage régulier $\gamma$')
