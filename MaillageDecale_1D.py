@@ -106,24 +106,19 @@ class Maillage(ImportData) :
             self.Func.D0 = lambda x: D0(self.Mail.pf,x)            
     
 def frexp10(x):
-    exp = floor(math.log10(x))
+    exp = np.floor(np.log10(x))
     return x / 10**exp, exp
     
 if __name__  ==  '__main__' :
     np.seterr(divide='ignore')
     np.seterr(invalid='ignore')
-    tinit_cpu=tcpu.time()
+    
     plt.close('all')
     print(30*"=")
     print("")
     print("Maillage :")
     plt.close('all')
     Panto = Maillage('Pantographe.cfg')
-    gama=np.linspace(0,1,1001)
-    ksi=Panto.Func.f(gama)
-    plt.plot(gama,ksi,'ob-')
-    plt.legend()
-    plt.grid()
     Carbon=ImportData('Carbon.cfg')
     vt=140000/3600.
     vb=vt/577.27
@@ -137,58 +132,73 @@ if __name__  ==  '__main__' :
     
 #    plt.legend()
 #    plt.grid()
+    Ls=1.
+    Betamax=k/rho/Cp/4/Ls**2*Panto.Func.D1(0.5)+1/2./Ls*vb*Panto.Func.D0(0.5)    
+    dgamacrit=2*k/rho/Cp/Betamax
+    f,p=frexp10(dgamacrit)
+    dgama=np.floor(f-1)*10**p
+    n=int(1/dgama)
+    if n%2==0:
+        n=n+1
+    
+    gama=np.linspace(0,1,n)
+    
+    ksi=Panto.Func.f(gama)
+    plt.plot(gama,ksi,'ob-')
+    plt.legend()
+    plt.grid()
+    
     dgama=gama[1]
     Pe1=dgama*vb/k*rho*Cp
     print('Peclet number (vb) : '+str(Pe1))
-    Ls=5.
-    Betamax=k/rho/Cp/4/Ls**2*Panto.Func.D1(0.5)+1/2./Ls*vb*Panto.Func.D0(0.5)
+    
     Pe2=dgama*Betamax/k*rho*Cp
         
     print('Peclet number (Beta) : '+str(Pe2))
     
     dtcrit=dgama/Betamax
     f,p=frexp10(dtcrit)
-    dt=10**(-5)
-    
-    LB=766e-3
-    Lb=400e-3
+    dt=10**p
+    dt=1000*dt
+    LB=766e-3/2
+    Lb=400e-3/2
     Lc=2e-3
     sig=Lc/6
-    Period=2*Lb/vb
+    Period=4*Lb/vb
     
-
-    time=np.arange(0,2*Period,dt)
+    tf=1000*Period
+    time=np.arange(0,tf,dt)
+    timesup=np.arange(Period/4,tf,Period/2)
+    time=np.sort(np.r_[time,timesup])
+    dt_v=np.diff(time)
     h=130.
     Pcv=2*50e-3+2*32e-3
     S=50e-3*32e-3
     R=Carbon.Elec.resistivity*LB/S
-    vb_v=vb*scsi.square((time-Period/2)*2*np.pi/Period)
-    Fo=k*dt/rho/Cp/dgama**2
+    vb_v=vb*scsi.square((time-Period/4)*2*np.pi/Period)
+    pos=Lb*scsi.sawtooth((time-Period/4)*2*np.pi/Period,width=0.5)
+    Fo=k*dt_v/rho/Cp/dgama**2
     plt.figure(3)
 
     Tinit=np.zeros_like(gama)
     T=Tinit
     I=1000.
-    rhs=np.ones_like(gama)*dt/rho/Cp*R*I**2/LB/S
+    rhs=np.ones_like(gama)/rho/Cp*R*I**2/2/LB/S
     source=norm(loc=0.5,scale=sig/2/Ls)
-    rhs=rhs*1/2./Ls*source.pdf(gama)
+    rhs=rhs/2/Ls*source.pdf(gama)
     SaveT=[]
     SaveT.append(Tinit)
     rhs[0]=0
     rhs[-1]=0
     
-    for i,t in enumerate(time) :
-        if vb_v[i+1]!=vb_v[i] :
-            print(t)
-            Beta=Betap=Betam=np.zeros_like(gama)
-        else:
-            Beta=k/rho/Cp/4/Ls**2*Panto.Func.D1(gama)+1/2./Ls*vb_v[i]*Panto.Func.D0(gama)
-            Betap=np.maximum(Beta,np.zeros_like(Beta))
-            Betam=np.minimum(Beta,np.zeros_like(Beta))
-            
-        b=-Panto.Func.D2(gama)*Fo/4/Ls**2+Betap*dt/dgama
-        a=1+2*Panto.Func.D2(gama)*Fo/4/Ls**2+dt/dgama*(Betam-Betap)+h*Pcv*dt/rho/Cp/S
-        c=-Panto.Func.D2(gama)*Fo/4/Ls**2-Betam*dt/dgama
+    for i,t in enumerate(time[:-1]) :
+        Beta=k/rho/Cp/4/Ls**2*Panto.Func.D1(gama)+1/2./Ls*vb_v[i]*Panto.Func.D0(gama)
+        Betap=np.maximum(Beta,np.zeros_like(Beta))
+        Betam=np.minimum(Beta,np.zeros_like(Beta))
+        
+        b=-Panto.Func.D2(gama)*Fo[i]/4/Ls**2+Betap*dt_v[i]/dgama
+        a=1+2*Panto.Func.D2(gama)*Fo[i]/4/Ls**2+dt_v[i]/dgama*(Betam-Betap)+h*Pcv*dt_v[i]/rho/Cp/S
+        c=-Panto.Func.D2(gama)*Fo[i]/4/Ls**2-Betam*dt_v[i]/dgama
         a[0]=1
         a[-1]=1
         b=b[1:]
@@ -197,12 +207,12 @@ if __name__  ==  '__main__' :
         c[0]=0
         
 #    for t in time :
-        T=Solvetridiag(b,a,c,T+rhs)
+        T=Solvetridiag(b,a,c,T+rhs*dt_v[i])
 #        if min(T)<0 :
 #            break
-        if i%1000 ==0 :
+        if t%100==0 :
             print("time : "+str(t)+" / Tmin : "+str(min(T))+" / Tmax : "+str(max(T)))
-            x=2*Ls*Panto.Func.f(gama)-Ls+vb_v[i]*t
+            x=2*Ls*Panto.Func.f(gama)-Ls+pos[i]
             ind=np.where((x>=-LB) & (x<=LB))
             plt.plot(x[ind],T[ind],'-',label=str(t))
     
