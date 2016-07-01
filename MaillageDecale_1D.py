@@ -103,12 +103,33 @@ class Maillage(ImportData) :
             D2 = lambdify(('p','x'),D2symb,"numpy")
             self.Func.D2 = lambda x: D2(self.Mail.pf,x)            
             D0 = lambdify(('p','x'),D0symb,"numpy")
-            self.Func.D0 = lambda x: D0(self.Mail.pf,x)            
-    
+            self.Func.D0 = lambda x: D0(self.Mail.pf,x)
+            
+            self.Geom.perimeter=2*self.Geom.height+2*self.Geom.depth
+            self.Geom.section=self.Geom.height*self.Geom.depth
+            self.Geom.surface=self.Geom.perimeter*2*self.Geom.half_width+2*self.Geom.section
+            self.Geom.volume=self.Geom.section*2*self.Geom.half_width
+            
 def frexp10(x):
     exp = np.floor(np.log10(x))
     return x / 10**exp, exp
+
+def contourtime(time,T,index_time,Bar) :
+        
+    for i,ind_time in enumerate(index_time) :
+        xreal=2*Ls*Bar.Mail.val_f-Ls+pos[ind_time]
+        indx=np.where((xreal>=-Bar.Geom.half_width) & (xreal<=Bar.Geom.half_width))
+        if 'X' in locals():
+            ST=np.r_[ST,T[indx,i].flatten()]
+            X=np.r_[X,xreal[indx].flatten()]
+            Time=np.r_[Time,time[i]*np.ones(np.size(indx[0]))]
+        else :
+            ST=T[indx,i].flatten()
+            X=xreal[indx].flatten()   
+            Time=time[i]*np.ones(np.size(indx[0]))
     
+    return Time,X,ST
+        
 if __name__  ==  '__main__' :
     np.seterr(divide='ignore')
     np.seterr(invalid='ignore')
@@ -136,19 +157,26 @@ if __name__  ==  '__main__' :
     Betamax=k/rho/Cp/4/Ls**2*Panto.Func.D1(0.5)+1/2./Ls*vb*Panto.Func.D0(0.5)    
     dgamacrit=2*k/rho/Cp/Betamax
     f,p=frexp10(dgamacrit)
-    dgama=np.floor(f-1)*10**p
+#    if f>2 :
+#        dgama=np.floor(f-1)*10**p
+#    else :
+    dgama=np.floor(f)*10**p
+        
     n=int(1/dgama)
     if n%2==0:
         n=n+1
     
-    gama=np.linspace(0,1,n)
+    Panto.Mail.gama=np.linspace(0,1,n)
+    Panto.Mail.val_f=Panto.Func.f(Panto.Mail.gama)
+    Panto.Mail.val_D1=Panto.Func.D1(Panto.Mail.gama)            
+    Panto.Mail.val_D2=Panto.Func.D2(Panto.Mail.gama)
+    Panto.Mail.val_D0=Panto.Func.D0(Panto.Mail.gama)
     
-    ksi=Panto.Func.f(gama)
-    plt.plot(gama,ksi,'ob-')
+    plt.plot(Panto.Mail.gama,Panto.Mail.val_f,'ob-')
     plt.legend()
     plt.grid()
     
-    dgama=gama[1]
+    dgama=Panto.Mail.gama[1]
     Pe1=dgama*vb/k*rho*Cp
     print('Peclet number (vb) : '+str(Pe1))
     
@@ -159,62 +187,93 @@ if __name__  ==  '__main__' :
     dtcrit=dgama/Betamax
     f,p=frexp10(dtcrit)
     dt=10**p
-    dt=1000*dt
-    LB=766e-3/2
-    Lb=400e-3/2
-    Lc=2e-3
-    sig=Lc/6
-    Period=4*Lb/vb
+    dt=100*dt
+
+
+    sig=Panto.Geom.contact/6
+    Period=4*Panto.Geom.sweeping/vb
     
-    tf=1000*Period
+    tf=10*Period
     time=np.arange(0,tf,dt)
     timesup=np.arange(Period/4,tf,Period/2)
     time=np.sort(np.r_[time,timesup])
     dt_v=np.diff(time)
     h=130.
-    Pcv=2*50e-3+2*32e-3
-    S=50e-3*32e-3
-    R=Carbon.Elec.resistivity*LB/S
+    
+    R=10e-3
     vb_v=vb*scsi.square((time-Period/4)*2*np.pi/Period)
-    pos=Lb*scsi.sawtooth((time-Period/4)*2*np.pi/Period,width=0.5)
+    pos=Panto.Geom.sweeping*scsi.sawtooth((time-Period/4)*2*np.pi/Period,width=0.5)
     Fo=k*dt_v/rho/Cp/dgama**2
     plt.figure(3)
 
-    Tinit=np.zeros_like(gama)
+    Tinit=np.zeros_like(Panto.Mail.gama)
     T=Tinit
-    I=1000.
-    rhs=np.ones_like(gama)/rho/Cp*R*I**2/2/LB/S
+    I=700.
+    schaff_coef=0.38
+    surf_coef=1./Panto.Geom.section
+    rhs=surf_coef*schaff_coef*np.ones_like(Panto.Mail.gama)/rho/Cp*R*I**2
     source=norm(loc=0.5,scale=sig/2/Ls)
-    rhs=rhs/2/Ls*source.pdf(gama)
-    SaveT=[]
-    SaveT.append(Tinit)
+    rhs=rhs/2/Ls*source.pdf(Panto.Mail.val_f)
+    savet=0.1
+    indxtime_save=np.where(time%savet==0)[0].size
+    SaveT=np.empty((n,indxtime_save))
+    SaveT[:,0]=Tinit
+    savetime=np.empty((indxtime_save,))
+    savetime[0]=0
+    saveind=np.empty((indxtime_save,))
+    saveind[0]=0
     rhs[0]=0
     rhs[-1]=0
-    
+      
+    j=1
+       
     for i,t in enumerate(time[:-1]) :
-        Beta=k/rho/Cp/4/Ls**2*Panto.Func.D1(gama)+1/2./Ls*vb_v[i]*Panto.Func.D0(gama)
-        Betap=np.maximum(Beta,np.zeros_like(Beta))
-        Betam=np.minimum(Beta,np.zeros_like(Beta))
+        Beta=k/rho/Cp/4./Ls**2*Panto.Mail.val_D1+1/2./Ls*vb_v[i]*Panto.Mail.val_D0
+
         
-        b=-Panto.Func.D2(gama)*Fo[i]/4/Ls**2+Betap*dt_v[i]/dgama
-        a=1+2*Panto.Func.D2(gama)*Fo[i]/4/Ls**2+dt_v[i]/dgama*(Betam-Betap)+h*Pcv*dt_v[i]/rho/Cp/S
-        c=-Panto.Func.D2(gama)*Fo[i]/4/Ls**2-Betam*dt_v[i]/dgama
-        a[0]=1
-        a[-1]=1
+        b=-Panto.Mail.val_D2*Fo[i]/4./Ls**2+Beta*dt_v[i]/2./dgama
+        a=1+2*Panto.Mail.val_D2*Fo[i]/4./Ls**2+h*Panto.Geom.perimeter*dt_v[i]/rho/Cp/Panto.Geom.section
+        c=-Panto.Mail.val_D2*Fo[i]/4./Ls**2-Beta*dt_v[i]/2./dgama
+        a[0]=1.
+        a[-1]=1.
         b=b[1:]
-        b[-1]=0
+        b[-1]=0.
         c=c[:-1]
-        c[0]=0
+        c[0]=0.
         
-#    for t in time :
         T=Solvetridiag(b,a,c,T+rhs*dt_v[i])
-#        if min(T)<0 :
-#            break
-        if t%100==0 :
-            print("time : "+str(t)+" / Tmin : "+str(min(T))+" / Tmax : "+str(max(T)))
-            x=2*Ls*Panto.Func.f(gama)-Ls+pos[i]
-            ind=np.where((x>=-LB) & (x<=LB))
-            plt.plot(x[ind],T[ind],'-',label=str(t))
+
+
+        if time[i+1]%savet==0 :
+            print(10*"_")
+            print(10*" "+"\\"+(20-1-10)*"_")
+            print('i : '+str(i))            
+            print("time : "+str(time[i+1])+" / Tmin : "+str(min(T))+" / Tmax : "+str(max(T)))
+            print(20*"_")
+            SaveT[:,j]=T
+            savetime[j]=time[i+1]
+            saveind[j]=i+1
+#            x=2*Ls*Panto.Mail.val_f-Ls+pos[i+1]
+#            ind=np.where((x>=-Panto.Geom.half_width) & (x<=Panto.Geom.half_width))
+#            savex[:,j]=x
+#            saveind.append(ind)
+#            plt.plot(x[ind],T[ind],'-',label=str(t))
+            j=j+1
+            
+#   if ((p+1)%int(interval_savet/dt))==0 :
+#            if Affiche_Calcul :
+#                print "======================"
+#                print "Iteration %d - Temps %.5g" %(p,(p+1)*dt)
+#                print "Itération Ray %d - Residu Rayonnement %g - \
+#                TJonction=%g °C" %(niter,residu_Ray,Tnew[nb1]-273.15)          
     
+    plt.figure(4)
+    Tmoy=SaveT.mean(axis=0)
+    coef_a=h*Panto.Geom.surface/rho/Cp/Panto.Geom.volume
+    coef_b=schaff_coef*R*I**2/rho/Cp/Panto.Geom.volume
+    
+    Tmoy_anal=coef_b/coef_a*(1-np.exp(-coef_a*savetime))
+    plt.plot(savetime,Tmoy_anal,'b',label='analytique')    
+    plt.plot(savetime,Tmoy,'r',label='numerique')
     plt.legend()
     plt.grid()
