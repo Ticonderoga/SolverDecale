@@ -128,8 +128,31 @@ def contourtime(time,T,index_time,Bar) :
             X=xreal[indx].flatten()   
             Time=time[i]*np.ones(np.size(indx[0]))
     
-    return Time,X,ST
-        
+    return Time,X,ST 
+    
+def mergetime(time1,time2) :
+    index=[]
+    newtime=np.array([])
+    j=0
+    if time1[-1]<time2[-1]:
+        time1,time2=time2,time1
+    for i,t in enumerate(time1[:-1]) :
+#        print(i,t,j,time2[j])
+        if time2[j]==time1[i]:
+            newtime=np.r_[newtime,time2[j]]
+            if j<time2.size-1 :
+                j=j+1
+            index.append(newtime.size-1)
+        elif (time2[j]>time1[i]) and (time2[j]<time1[i+1]) :
+            newtime=np.r_[newtime,time1[i],time2[j]]           
+            if j<time2.size-1 :
+                j=j+1 
+            index.append(newtime.size-1)
+        else :
+            newtime=np.r_[newtime,time1[i]]
+    newtime=np.r_[newtime,time1[-1]]
+    return newtime,np.array(index)
+    
 if __name__  ==  '__main__' :
     np.seterr(divide='ignore')
     np.seterr(invalid='ignore')
@@ -153,19 +176,19 @@ if __name__  ==  '__main__' :
     
 #    plt.legend()
 #    plt.grid()
-    Ls=1.
-    Betamax=k/rho/Cp/4/Ls**2*Panto.Func.D1(0.5)+1/2./Ls*vb*Panto.Func.D0(0.5)    
-    dgamacrit=2*k/rho/Cp/Betamax
-    f,p=frexp10(dgamacrit)
-#    if f>2 :
-#        dgama=np.floor(f-1)*10**p
-#    else :
-    dgama=np.floor(f)*10**p
-        
-    n=int(1/dgama)
-    if n%2==0:
-        n=n+1
-    
+    Ls=2.
+#    Betamax=k/rho/Cp/4/Ls**2*Panto.Func.D1(0.5)+1/2./Ls*vb*Panto.Func.D0(0.5)    
+#    dgamacrit=2*k/rho/Cp/Betamax
+#    f,p=frexp10(dgamacrit)
+##    if f>2 :
+##        dgama=np.floor(f-1)*10**p
+##    else :
+#    dgama=np.floor(f)*10**p
+#        
+#    n=int(1/dgama)
+#    if n%2==0:
+#        n=n+1
+    n=5001
     Panto.Mail.gama=np.linspace(0,1,n)
     Panto.Mail.val_f=Panto.Func.f(Panto.Mail.gama)
     Panto.Mail.val_D1=Panto.Func.D1(Panto.Mail.gama)            
@@ -187,16 +210,16 @@ if __name__  ==  '__main__' :
     dtcrit=dgama/Betamax
     f,p=frexp10(dtcrit)
     dt=10**p
-    dt=100*dt
+    dt=1000*dt
 
 
     sig=Panto.Geom.contact/6
     Period=4*Panto.Geom.sweeping/vb
     
-    tf=10*Period
-    time=np.arange(0,tf,dt)
+    tf=5*Period
+    timebase=np.arange(0,tf,dt)
     timesup=np.arange(Period/4,tf,Period/2)
-    time=np.sort(np.r_[time,timesup])
+    time,indxtime_reb=mergetime(timebase,timesup)
     dt_v=np.diff(time)
     h=130.
     
@@ -214,14 +237,14 @@ if __name__  ==  '__main__' :
     rhs=surf_coef*schaff_coef*np.ones_like(Panto.Mail.gama)/rho/Cp*R*I**2
     source=norm(loc=0.5,scale=sig/2/Ls)
     rhs=rhs/2/Ls*source.pdf(Panto.Mail.val_f)
-    savet=0.1
-    indxtime_save=np.where(time%savet==0)[0].size
-    SaveT=np.empty((n,indxtime_save))
+    savet=1.
+    indxtime_reg_save=np.where(time%savet==0)[0]
+    indxtime=np.sort(np.unique(np.r_[indxtime_reg_save-1,indxtime_reb-1]))
+    indxtime[0]=0
+    SaveT=np.empty((n,indxtime.size))
     SaveT[:,0]=Tinit
-    savetime=np.empty((indxtime_save,))
+    savetime=np.empty((indxtime.size,))
     savetime[0]=0
-    saveind=np.empty((indxtime_save,))
-    saveind[0]=0
     rhs[0]=0
     rhs[-1]=0
       
@@ -244,7 +267,7 @@ if __name__  ==  '__main__' :
         T=Solvetridiag(b,a,c,T+rhs*dt_v[i])
 
 
-        if time[i+1]%savet==0 :
+        if i==indxtime[j] :
             print(10*"_")
             print(10*" "+"\\"+(20-1-10)*"_")
             print('i : '+str(i))            
@@ -252,13 +275,10 @@ if __name__  ==  '__main__' :
             print(20*"_")
             SaveT[:,j]=T
             savetime[j]=time[i+1]
-            saveind[j]=i+1
-#            x=2*Ls*Panto.Mail.val_f-Ls+pos[i+1]
-#            ind=np.where((x>=-Panto.Geom.half_width) & (x<=Panto.Geom.half_width))
-#            savex[:,j]=x
-#            saveind.append(ind)
-#            plt.plot(x[ind],T[ind],'-',label=str(t))
-            j=j+1
+
+            if j<indxtime.size-1:
+                j=j+1
+            
             
 #   if ((p+1)%int(interval_savet/dt))==0 :
 #            if Affiche_Calcul :
@@ -275,5 +295,13 @@ if __name__  ==  '__main__' :
     Tmoy_anal=coef_b/coef_a*(1-np.exp(-coef_a*savetime))
     plt.plot(savetime,Tmoy_anal,'b',label='analytique')    
     plt.plot(savetime,Tmoy,'r',label='numerique')
+    plt.legend()
+    plt.grid()
+    
+    plt.figure(5)
+    for j,i in enumerate(indxtime[1:]+1) :
+        x=2*Ls*Panto.Mail.val_f-Ls+pos[i]
+        ind=np.where((x>=-Panto.Geom.half_width) & (x<=Panto.Geom.half_width))
+        plt.plot(x[ind],SaveT[ind,j+1].flatten(),'-',label=str(time[i]))
     plt.legend()
     plt.grid()
