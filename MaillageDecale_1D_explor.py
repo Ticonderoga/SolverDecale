@@ -17,7 +17,7 @@ import scipy.sparse as scsp
 #from concurrent.futures import ThreadPoolExecutor
 #import multiprocessing
 
-import scipy.stats as scst
+from scipy.stats import norm
 import scipy.signal as scsi
 import sys
 
@@ -30,9 +30,9 @@ class Maillage(ImportData) :
 
             dfsymb = diff(self.Func.fsymb,'x')
             df2symb = diff(self.Func.fsymb,'x',2)
-            Csymb = (np.pi*self.Func.fsymb)**(-2)#ok
-            C3symb = -df2symb*dfsymb**(-3)#ok
-            C1symb = (self.Func.fsymb*dfsymb)**(-1)+C3symb#ok
+            Csymb = (np.pi*self.Func.fsymb)**(-2)
+            C3symb = -df2symb*dfsymb**(-3)
+            C1symb = (self.Func.fsymb*dfsymb)**(-1)+C3symb
             C2symb = dfsymb**(-2)
             f = lambdify(('p','x'),self.Func.fsymb,"numpy")
             self.Func.f = lambda x: f(self.Mail.pf,x)
@@ -51,8 +51,8 @@ class Maillage(ImportData) :
 
             dgsymb = diff(self.Func.gsymb,'x')
             dg2symb = diff(self.Func.gsymb,'x',2)
-            D2symb = dgsymb**(-2)#ok
-            D1symb = -dg2symb*dgsymb**(-3)#ok      
+            D2symb = dgsymb**(-2)
+            D1symb = -D2symb*dg2symb            
             g = lambdify(('p','x'),self.Func.gsymb,"numpy")
             self.Func.g = lambda x: g(self.Mail.pg,x)
             D1 = lambdify(('p','x'),D1symb,"numpy")
@@ -96,8 +96,7 @@ class Maillage(ImportData) :
             df2symb = diff(self.Func.fsymb,'x',2)
             D2symb = dfsymb**(-2)
             D0symb = dfsymb**(-1)
-
-            D1symb = -df2symb*dfsymb**(-3)
+            D1symb = -D2symb*df2symb            
             f = lambdify(('p','x'),self.Func.fsymb,"numpy")
             self.Func.f = lambda x: f(self.Mail.pf,x)
             D1 = lambdify(('p','x'),D1symb,"numpy")
@@ -106,7 +105,7 @@ class Maillage(ImportData) :
             self.Func.D2 = lambda x: D2(self.Mail.pf,x)            
             D0 = lambdify(('p','x'),D0symb,"numpy")
             self.Func.D0 = lambda x: D0(self.Mail.pf,x)
-            self.Mail.n = int(self.Mail.n)
+            
             self.Mail.Gama = np.linspace(0,1,self.Mail.n)
             self.Mail.dGama = self.Mail.Gama[1] 
             
@@ -146,15 +145,8 @@ def mergetime(time1,time2) :
     Ind=np.argsort(tmerge)
     indices=np.where(Ind>time1.size)[0]
     return tmerge[Ind],indices
-
-
-def normtrunc(myclip_a,myclip_b,my_mean,my_std,x):
-    a, b = (myclip_a - my_mean)/my_std,(myclip_b - my_mean)/my_std
-    return scst.truncnorm.pdf(x, a, b, my_mean,my_std)
-   
-
-if __name__  ==  '__main__' :
     
+if __name__  ==  '__main__' :
     np.seterr(divide='ignore')
     np.seterr(invalid='ignore')
     
@@ -162,15 +154,15 @@ if __name__  ==  '__main__' :
     print(30*"=")
     print("")
     print("Maillage :")
-    
+    plt.close('all')
     Panto = Maillage('Pantographe.cfg')
-    
+    Panto.Mail.n = int(Panto.Mail.n)
     Carbon=ImportData('Carbon.cfg')
     Case = ImportData('ConfigTrip.cfg')
 
     # sweeping velocity should be detailed 
     # especially the 577.27    
-    sweeping_velocity = Case.Trai.velocity / 577.27
+    sweeping_velocity = Case.Trai.velocity / 577.27 
     
     k=Carbon.Ther.conductivity
     rho=Carbon.Ther.density
@@ -195,14 +187,10 @@ if __name__  ==  '__main__' :
     Tinit=np.zeros_like(Panto.Mail.Gama)
     T=Tinit
     
-    rhs_constant=Carbon.Elec.schaff_coef/Panto.Geom.section\
-        /rho/Cp*Carbon.Elec.contact*Case.Elec.current**2
-    
-
-    rhs = rhs_constant*scst.norm(loc=0.5,scale=sig/2/Ls).pdf(Panto.Mail.val_f)/2/Ls
-
-    rhs[0]=0
-    rhs[-1]=0
+    rhs=Carbon.Elec.schaff_coef/Panto.Geom.section*np.ones_like(Panto.Mail.Gama)/rho/Cp*\
+        Carbon.Elec.contact*Case.Elec.current**2
+    source=norm(loc=0.5,scale=sig/2/Ls)
+    rhs=rhs/2/Ls*source.pdf(Panto.Mail.val_f)
     
     indxtime_reg_save=np.where(time%Case.Time.savet==0)[0]
     indxtime=np.sort(np.unique(np.r_[indxtime_reg_save-1,indxtime_reb-1]))
@@ -211,8 +199,9 @@ if __name__  ==  '__main__' :
     SaveT[:,0]=Tinit
     savetime=np.empty((indxtime.size,))
     savetime[0]=0
-    
-    #%% debut boucle temporelle
+    rhs[0]=0
+    rhs[-1]=0
+      
     j=1
        
     for i,t in enumerate(time[:-1]) :
@@ -238,9 +227,8 @@ if __name__  ==  '__main__' :
             print(10*"_")
             print(10*" "+"\\"+(20-1-10)*"_")
             print('i : '+str(i))            
-            print("time : "+'{:.2f}'.format(time[i+1])+\
-                  "s / Tmin : "+'{:.2f}'.format(min(T))+\
-                  "°C / Tmax : "+'{:.2f}'.format(max(T))+' °C')
+            print("time : "+str(time[i+1])+" / Tmin : "+str(min(T))+\
+                " / Tmax : "+str(max(T)))
             print(20*"_")
             SaveT[:,j]=T
             savetime[j]=time[i+1]
@@ -248,22 +236,36 @@ if __name__  ==  '__main__' :
             if j<indxtime.size-1:
                 j=j+1
 
+#    plt.figure(1)
+#    Tmoy=SaveT.mean(axis=0)
+#    coef_a=h*Panto.Geom.surface/rho/Cp/Panto.Geom.volume
+#    coef_b=schaff_coef*R*I**2/rho/Cp/Panto.Geom.volume
+#    
+#    Tmoy_anal=coef_b/coef_a*(1-np.exp(-coef_a*savetime))
+#    plt.plot(savetime,Tmoy_anal,'b',label='analytique')    
+#    plt.plot(savetime,Tmoy,'r',label='numerique')
+#    plt.legend()
+#    plt.grid()
+#    plt.title('Anal / Num : Ls ='+str(Ls)+' : n ='+str(n))
+#    plt.xlabel('secondes [s]')
+#    plt.ylabel('Echauffement [°C]')
+#    plt.savefig("./Results/Anal_num_"+str(Ls)+"_"+str(n)+".pdf")
+
     plt.figure(2)
     for j,i in enumerate(indxtime[1:]+1) :
         x=2*Ls*Panto.Mail.val_f-Ls+pos[i]
         ind=np.where((x>=-Panto.Geom.half_width) & (x<=Panto.Geom.half_width))
+#        plt.plot(x[ind],SaveT[ind,j+1].flatten(),'-',label=str(time[i]))
         plt.plot(x[ind],SaveT[ind,j+1].flatten(),'-')
 
     plt.legend()
     plt.grid()
-    plt.title('Num : Ls = '+str(Ls)+' : n = '+str(Panto.Mail.n)+\
-        ' : dt = '+str(Case.Time.dt)+' : p = '+str(Panto.Mail.pf))
+    plt.title('Num : Ls ='+str(Ls)+' : n ='+str(Panto.Mail.n)+\
+        ' : dt ='+str(Case.Time.dt))
     plt.xlabel('distance [m]')
     plt.ylabel('Echauffement [°C]')
-    current_axis=plt.axis()
-    plt.axis([current_axis[0],current_axis[1],0,current_axis[3]])
     plt.savefig("./Results/Num_"+str(Ls)+"_"+str(Panto.Mail.n)+\
-        "_"+str(Case.Time.dt)+"_"+str(Panto.Mail.pf)+".pdf")
+        "_"+str(Case.Time.dt)+".pdf")
     
 #    np.savez_compressed("./Results/Data_"+str(Ls)+"_"+str(n),\
 #        indxtime=indxtime,\
@@ -272,4 +274,4 @@ if __name__  ==  '__main__' :
 #        SaveT=SaveT,\
 #        savetime=savetime)
 
-#    plt.close('all')
+    plt.close('all')
