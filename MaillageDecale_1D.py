@@ -121,25 +121,6 @@ class Maillage(ImportData) :
             self.Geom.surface=self.Geom.perimeter*2*self.Geom.half_width+2*self.Geom.section
             self.Geom.volume=self.Geom.section*2*self.Geom.half_width
             
-def frexp10(x):
-    exp = np.floor(np.log10(x))
-    return x / 10**exp, exp
-
-def contourtime(time,T,index_time,Bar) :
-        
-    for i,ind_time in enumerate(index_time) :
-        xreal=2*Ls*Bar.Mail.val_f-Ls+pos[ind_time]
-        indx=np.where((xreal>=-Bar.Geom.half_width) & (xreal<=Bar.Geom.half_width))
-        if 'X' in locals():
-            ST=np.r_[ST,T[indx,i].flatten()]
-            X=np.r_[X,xreal[indx].flatten()]
-            Time=np.r_[Time,time[i]*np.ones(np.size(indx[0]))]
-        else :
-            ST=T[indx,i].flatten()
-            X=xreal[indx].flatten()   
-            Time=time[i]*np.ones(np.size(indx[0]))
-    
-    return Time,X,ST 
     
 def mergetime(time1,time2) :
     tmerge=np.r_[time1,time2]
@@ -147,11 +128,6 @@ def mergetime(time1,time2) :
     indices=np.where(Ind>time1.size)[0]
     return tmerge[Ind],indices
 
-
-def normtrunc(myclip_a,myclip_b,my_mean,my_std,x):
-    a, b = (myclip_a - my_mean)/my_std,(myclip_b - my_mean)/my_std
-    return scst.truncnorm.pdf(x, a, b, my_mean,my_std)
-   
 
 if __name__  ==  '__main__' :
     
@@ -197,9 +173,9 @@ if __name__  ==  '__main__' :
     
     rhs_constant=Carbon.Elec.schaff_coef/Panto.Geom.section\
         /rho/Cp*Carbon.Elec.contact*Case.Elec.current**2
-    
+    source=scst.norm(loc=0.5,scale=sig/2/Ls)
 
-    rhs = rhs_constant*scst.norm(loc=0.5,scale=sig/2/Ls).pdf(Panto.Mail.val_f)/2/Ls
+    rhs = rhs_constant*source.pdf(Panto.Mail.val_f)/2/Ls
 
     rhs[0]=0
     rhs[-1]=0
