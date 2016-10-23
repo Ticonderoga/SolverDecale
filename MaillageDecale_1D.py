@@ -143,7 +143,9 @@ if __name__  ==  '__main__' :
     
     Carbon=ImportData('Carbon.cfg')
     Case = ImportData('ConfigTrip.cfg')
-
+    
+    
+    
     # sweeping velocity should be detailed 
     # especially the 577.27    
     sweeping_velocity = Case.Trai.velocity / 577.27
@@ -151,9 +153,13 @@ if __name__  ==  '__main__' :
     k=Carbon.Ther.conductivity
     rho=Carbon.Ther.density
     Cp=Carbon.Ther.heat_capacity
-    Ls=10.
 
     sig=Panto.Geom.contact/6
+    
+    pente_f_center=lambdify(('p','x'),diff(Panto.Func.fsymb,'x'))(Panto.Mail.pf,0.5)
+    nb_center=np.floor(3*sig/Panto.Mail.Ls/pente_f_center/Panto.Mail.dGama)
+    print('Il y a %d points au contact'%nb_center)
+    
     Period=4*Panto.Geom.sweeping/sweeping_velocity
     
     timebase=np.arange(0,Case.Time.final,Case.Time.dt)
@@ -173,9 +179,9 @@ if __name__  ==  '__main__' :
     
     rhs_constant=Carbon.Elec.schaff_coef/Panto.Geom.section\
         /rho/Cp*Carbon.Elec.contact*Case.Elec.current**2
-    source=scst.norm(loc=0.5,scale=sig/2/Ls)
+    source=scst.norm(loc=0.5,scale=sig/2/Panto.Mail.Ls)
 
-    rhs = rhs_constant*source.pdf(Panto.Mail.val_f)/2/Ls
+    rhs = rhs_constant*source.pdf(Panto.Mail.val_f)/2/Panto.Mail.Ls
 
     rhs[0]=0
     rhs[-1]=0
@@ -192,15 +198,15 @@ if __name__  ==  '__main__' :
     j=1
        
     for i,t in enumerate(time[:-1]) :
-        Beta=k/rho/Cp/4./Ls**2*Panto.Mail.val_D1\
-            +1/2./Ls*sweeping_velocity_v[i]*Panto.Mail.val_D0
+        Beta=k/rho/Cp/4./Panto.Mail.Ls**2*Panto.Mail.val_D1\
+            +1/2./Panto.Mail.Ls*sweeping_velocity_v[i]*Panto.Mail.val_D0
         
-        b=-Panto.Mail.val_D2*Fo[i]/4./Ls**2+Beta*dt_v[i]/2./Panto.Mail.dGama
+        b=-Panto.Mail.val_D2*Fo[i]/4./Panto.Mail.Ls**2+Beta*dt_v[i]/2./Panto.Mail.dGama
 
-        a=1+2*Panto.Mail.val_D2*Fo[i]/4./Ls**2+\
+        a=1+2*Panto.Mail.val_D2*Fo[i]/4./Panto.Mail.Ls**2+\
             h*Panto.Geom.perimeter*dt_v[i]/rho/Cp/Panto.Geom.section
         
-        c=-Panto.Mail.val_D2*Fo[i]/4./Ls**2-Beta*dt_v[i]/2./Panto.Mail.dGama
+        c=-Panto.Mail.val_D2*Fo[i]/4./Panto.Mail.Ls**2-Beta*dt_v[i]/2./Panto.Mail.dGama
         a[0]=1.
         a[-1]=1.
         b=b[1:]
@@ -226,22 +232,22 @@ if __name__  ==  '__main__' :
 
     plt.figure(2)
     for j,i in enumerate(indxtime[1:]+1) :
-        x=2*Ls*Panto.Mail.val_f-Ls+pos[i]
+        x=2*Panto.Mail.Ls*Panto.Mail.val_f-Panto.Mail.Ls+pos[i]
         ind=np.where((x>=-Panto.Geom.half_width) & (x<=Panto.Geom.half_width))
         plt.plot(x[ind],SaveT[ind,j+1].flatten(),'-')
 
-    plt.legend()
+#    plt.legend()
     plt.grid()
-    plt.title('Num : Ls = '+str(Ls)+' : n = '+str(Panto.Mail.n)+\
+    plt.title('Num : Ls = '+str(Panto.Mail.Ls)+' : n = '+str(Panto.Mail.n)+\
         ' : dt = '+str(Case.Time.dt)+' : p = '+str(Panto.Mail.pf))
     plt.xlabel('distance [m]')
     plt.ylabel('Echauffement [°C]')
     current_axis=plt.axis()
     plt.axis([current_axis[0],current_axis[1],0,current_axis[3]])
-    plt.savefig("./Results/Num_"+str(Ls)+"_"+str(Panto.Mail.n)+\
+    plt.savefig("./Results/Num_"+str(Panto.Mail.Ls)+"_"+str(Panto.Mail.n)+\
         "_"+str(Case.Time.dt)+"_"+str(Panto.Mail.pf)+".pdf")
     
-#    np.savez_compressed("./Results/Data_"+str(Ls)+"_"+str(n),\
+#    np.savez_compressed("./Results/Data_"+str(Panto.Mail.Ls)+"_"+str(n),\
 #        indxtime=indxtime,\
 #        val_f=Panto.Mail.val_f,\
 #        pos=pos,\
