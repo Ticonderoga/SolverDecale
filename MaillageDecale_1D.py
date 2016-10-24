@@ -4,25 +4,26 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+# Utilisation de tri pour le Maillage 2D polaire
 import matplotlib.tri as tri
+# fonctions de calcul symbolique utilisée dans Maillage
 from sympy import lambdify, exp, Symbol, diff
 from sympy.parsing.sympy_parser import parse_expr
+# La classe Maillage pourrait se retrouver dans ImportData3
 from ImportDatap3 import *
-from Routines.proprietes_fluides import C2K, K2C
+
+# Résolution tridiag
 from Routines.AnToolsPyxp3 import *
-
-import scipy.interpolate as scint
-import scipy.sparse as scsp
-
-#from concurrent.futures import ThreadPoolExecutor
-#import multiprocessing
 
 import scipy.stats as scst
 import scipy.signal as scsi
-import sys
+
 
 class Maillage(ImportData) :
-    # Classe de maillage initialisée via un fichier à importer
+    """ Classe de maillage initialisée via un fichier à importer
+    on peut gérer un maillage polaire 2D ou 1D
+    l'idée générale est d'avoir des fonctions puis des valeurs sur
+    le maillage en Gama """
     def __init__(self, data_file) :
         ImportData.__init__(self,data_file)
         
@@ -123,6 +124,9 @@ class Maillage(ImportData) :
             
     
 def mergetime(time1,time2) :
+    """Fonction permettant de fusionner deux bases de temps 
+    et surtout de donner les indices de time2 dans le nouveau
+    vecteur de temps"""
     tmerge=np.r_[time1,time2]
     Ind=np.argsort(tmerge)
     indices=np.where(Ind>time1.size)[0]
@@ -135,62 +139,80 @@ if __name__  ==  '__main__' :
     np.seterr(invalid='ignore')
     
     plt.close('all')
-    print(30*"=")
-    print("")
-    print("Maillage :")
-    
-    Panto = Maillage('Pantographe.cfg')
-    
+
+    # Pantographe regroupe les infos du Maillage sur le Panto
+    # Il y a donc la géométrie mais aussi le Maillage    
+    Panto = Maillage('Pantographe.cfg')    
+    # le matériau : Ici du Carbone
     Carbon=ImportData('Carbon.cfg')
+    # le trajet pour l'instant c'est là qu'on met le courant
     Case = ImportData('ConfigTrip.cfg')
     
-    
-    
-    # sweeping velocity should be detailed 
-    # especially the 577.27    
+    # vitesse de balayge
+    # TOFIX il faudrait que la vitesse de balayage soit fonction
+    # de la vitesse du train mais aussi du plan de piquetage
+    # on peut envisager de mettre des .dat dans le fichier ConfigTrip
     sweeping_velocity = Case.Trai.velocity / 577.27
     
+    # par facilité mais il faudrait l'enlever 
     k=Carbon.Ther.conductivity
     rho=Carbon.Ther.density
     Cp=Carbon.Ther.heat_capacity
 
+    # le contact de la caténaire couvre 6 sigma de la gaussienne
     sig=Panto.Geom.contact/6
     
+    # On calcule la pente de la fonction de raffinage pour en déduire un
+    # nombre de points au contact
     pente_f_center=lambdify(('p','x'),diff(Panto.Func.fsymb,'x'))(Panto.Mail.pf,0.5)
     nb_center=np.floor(3*sig/Panto.Mail.Ls/pente_f_center/Panto.Mail.dGama)
     print('Il y a %d points au contact'%nb_center)
     
+    # On calcule la période de temps
     Period=4*Panto.Geom.sweeping/sweeping_velocity
-    
+    # les poins temporesl classiques
     timebase=np.arange(0,Case.Time.final,Case.Time.dt)
+    # les points de rebroussement
     timesup=np.arange(Period/4,Case.Time.final,Period/2)    
     time,indxtime_reb=mergetime(timebase,timesup)
+    # les dt sous forme vectorielle la plupart sont égaux à Case.Time.dt
     dt_v=np.diff(time)
+    
+    # Coefficient d'échange en W/m2/K il faudrait le recalculer à partir
+    # de la vitesse
     h=130.
     
-    
+    # les vitesses de balayage en vectoriel
     sweeping_velocity_v=sweeping_velocity*scsi.square((time-Period/4)*2*np.pi/Period)
+    # les positions de la caténaire
     pos=Panto.Geom.sweeping*scsi.sawtooth((time-Period/4)*2*np.pi/Period,width=0.5)
+    # le nombre de Fourier
     Fo=k*dt_v/rho/Cp/Panto.Mail.dGama**2
     
-
+    # Température initiale 
+    # attention on calcule un échauffement et Tinit=0
     Tinit=np.zeros_like(Panto.Mail.Gama)
     T=Tinit
     
+    # le terme d'échauffement lié au contact surfacique
     rhs_constant=Carbon.Elec.schaff_coef/Panto.Geom.section\
         /rho/Cp*Carbon.Elec.contact*Case.Elec.current**2
+    # la gaussienne qu'il faudra diviser par 2Ls
     source=scst.norm(loc=0.5,scale=sig/2/Panto.Mail.Ls)
-
+    # le terme source final
     rhs = rhs_constant*source.pdf(Panto.Mail.val_f)/2/Panto.Mail.Ls
-
+    # au bout rien ..
     rhs[0]=0
     rhs[-1]=0
     
+    # les indices de temps pour la sauvegarde
     indxtime_reg_save=np.where(time%Case.Time.savet==0)[0]
     indxtime=np.sort(np.unique(np.r_[indxtime_reg_save-1,indxtime_reb-1]))
     indxtime[0]=0
+    # initialisation du  tableau des températures
     SaveT=np.empty((Panto.Mail.n,indxtime.size))
     SaveT[:,0]=Tinit
+    # initialisation des temps de sauvegarde (Redondance ?)
     savetime=np.empty((indxtime.size,))
     savetime[0]=0
     
@@ -198,15 +220,18 @@ if __name__  ==  '__main__' :
     j=1
        
     for i,t in enumerate(time[:-1]) :
+        # Coefficient sur l'advection
         Beta=k/rho/Cp/4./Panto.Mail.Ls**2*Panto.Mail.val_D1\
             +1/2./Panto.Mail.Ls*sweeping_velocity_v[i]*Panto.Mail.val_D0
-        
+        # les 3 diagonales b,a,c
         b=-Panto.Mail.val_D2*Fo[i]/4./Panto.Mail.Ls**2+Beta*dt_v[i]/2./Panto.Mail.dGama
 
         a=1+2*Panto.Mail.val_D2*Fo[i]/4./Panto.Mail.Ls**2+\
             h*Panto.Geom.perimeter*dt_v[i]/rho/Cp/Panto.Geom.section
         
         c=-Panto.Mail.val_D2*Fo[i]/4./Panto.Mail.Ls**2-Beta*dt_v[i]/2./Panto.Mail.dGama
+        
+        # les conditions limites simplissimes
         a[0]=1.
         a[-1]=1.
         b=b[1:]
@@ -214,8 +239,10 @@ if __name__  ==  '__main__' :
         c=c[:-1]
         c[0]=0.
         
+        # la résolution du système tridiagonal
         T=Solvetridiag(b,a,c,T+rhs*dt_v[i])
 
+        # on va afficher et sauvegarder les valeurs
         if i==indxtime[j] :
             print(10*"_")
             print(10*" "+"\\"+(20-1-10)*"_")
@@ -230,23 +257,28 @@ if __name__  ==  '__main__' :
             if j<indxtime.size-1:
                 j=j+1
 
+    # on trace            
     plt.figure(2)
     for j,i in enumerate(indxtime[1:]+1) :
+        # recalcul des vraies positions
         x=2*Panto.Mail.Ls*Panto.Mail.val_f-Panto.Mail.Ls+pos[i]
         ind=np.where((x>=-Panto.Geom.half_width) & (x<=Panto.Geom.half_width))
         plt.plot(x[ind],SaveT[ind,j+1].flatten(),'-')
 
-#    plt.legend()
     plt.grid()
     plt.title('Num : Ls = '+str(Panto.Mail.Ls)+' : n = '+str(Panto.Mail.n)+\
         ' : dt = '+str(Case.Time.dt)+' : p = '+str(Panto.Mail.pf))
     plt.xlabel('distance [m]')
     plt.ylabel('Echauffement [°C]')
+    # on règles les axes
     current_axis=plt.axis()
     plt.axis([current_axis[0],current_axis[1],0,current_axis[3]])
+    # sauvegarde
     plt.savefig("./Results/Num_"+str(Panto.Mail.Ls)+"_"+str(Panto.Mail.n)+\
         "_"+str(Case.Time.dt)+"_"+str(Panto.Mail.pf)+".pdf")
-    
+
+# BOUT DE CODE TRASH pour sauvegarde des Résultats    
+#
 #    np.savez_compressed("./Results/Data_"+str(Panto.Mail.Ls)+"_"+str(n),\
 #        indxtime=indxtime,\
 #        val_f=Panto.Mail.val_f,\
@@ -254,4 +286,3 @@ if __name__  ==  '__main__' :
 #        SaveT=SaveT,\
 #        savetime=savetime)
 
-#    plt.close('all')
