@@ -285,12 +285,12 @@ if __name__  ==  '__main__' :
 
     # on trace            
     plt.figure(2)
-    for j,i in enumerate(indxtime[1:]+1) :
+    for j,i in enumerate(indxtime) :
         # recalcul des vraies positions
         x=2*Panto.Mail.Ls*Panto.Mail.val_f-Panto.Mail.Ls+pos[i]
         ind=np.where((x>=-Panto.Geom.half_width) & (x<=Panto.Geom.half_width))
-        plt.plot(x[ind],SaveT[ind,j+1].flatten(),'-')
-        Tmid[j+1]=np.interp(-0.1, x[ind],SaveT[ind,j+1].flatten())
+        plt.plot(x[ind],SaveT[ind,j].flatten(),'-')
+        Tmid[j]=np.interp(-0.1, x[ind],SaveT[ind,j].flatten())
 
 
     plt.grid()
