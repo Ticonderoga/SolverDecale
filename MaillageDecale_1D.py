@@ -126,12 +126,37 @@ class Maillage(ImportData) :
 def mergetime(time1,time2) :
     """Fonction permettant de fusionner deux bases de temps 
     et surtout de donner les indices de time2 dans le nouveau
-    vecteur de temps"""
+    vecteur de temps
+    """
     tmerge=np.r_[time1,time2]
     Ind=np.argsort(tmerge)
     indices=np.where(Ind>time1.size)[0]
     return tmerge[Ind],indices
 
+def mergetime2(time1,time2,ratio) :
+    """Fonction permettant de fusionner deux bases de temps 
+    ratio représente le ratio (entier) entre savet et dt
+    
+    Exemple : 
+    --------
+    
+    >>>  ratio = int(np.floor(savet/dt))
+    >>>  time1 = np.arange(0,tf,dt)
+    >>>  time2 = # points supplémentaires
+    >>>  time,ind = mergetime2(time1,time2,ratio)
+     
+    Returns : 
+    --------
+    **time** : la base de temps fusionnée
+    
+    **ind** : les indices de **time2** et des temps tous les **savet** dans **time**
+     """
+    tmerge=np.r_[time1,time2]
+    Ind=np.argsort(tmerge)
+    indices_ratio=np.where((Ind%ratio==0)&(Ind<time1.size))[0]
+    indices_time2=np.where(Ind>time1.size)[0]
+    indices=np.sort(np.unique(np.r_[indices_ratio,indices_time2]))
+    return tmerge[Ind],indices
 
 if __name__  ==  '__main__' :
     
@@ -170,11 +195,12 @@ if __name__  ==  '__main__' :
     
     # On calcule la période de temps
     Period=4*Panto.Geom.sweeping/sweeping_velocity
-    # les poins temporesl classiques
+    # les points temporels classiques
     timebase=np.arange(0,Case.Time.final,Case.Time.dt)
     # les points de rebroussement
-    timesup=np.arange(Period/4,Case.Time.final,Period/2)    
-    time,indxtime_reb=mergetime(timebase,timesup)
+    timesup=np.arange(Period/4,Case.Time.final,Period/2)
+    ratio=int(np.floor(Case.Time.savet/Case.Time.dt))
+    time,indxtime=mergetime2(timebase,timesup,ratio)
     # les dt sous forme vectorielle la plupart sont égaux à Case.Time.dt
     dt_v=np.diff(time)
     
@@ -206,16 +232,16 @@ if __name__  ==  '__main__' :
     rhs[-1]=0
     
     # les indices de temps pour la sauvegarde
-    indxtime_reg_save=np.where(time%Case.Time.savet==0)[0]
-    indxtime=np.sort(np.unique(np.r_[indxtime_reg_save-1,indxtime_reb-1]))
-    indxtime[0]=0
+#    indxtime[0]=0
+
     # initialisation du  tableau des températures
     SaveT=np.empty((Panto.Mail.n,indxtime.size))
     SaveT[:,0]=Tinit
     # initialisation des temps de sauvegarde (Redondance ?)
     savetime=np.empty((indxtime.size,))
     savetime[0]=0
-    
+    Tmid=np.empty((indxtime.size))
+    Tmid[0]=Tinit[0]
     #%% debut boucle temporelle
     j=1
        
@@ -243,7 +269,7 @@ if __name__  ==  '__main__' :
         T=Solvetridiag(b,a,c,T+rhs*dt_v[i])
 
         # on va afficher et sauvegarder les valeurs
-        if i==indxtime[j] :
+        if (i+1)==indxtime[j] :
             print(10*"_")
             print(10*" "+"\\"+(20-1-10)*"_")
             print('i : '+str(i))            
@@ -264,6 +290,8 @@ if __name__  ==  '__main__' :
         x=2*Panto.Mail.Ls*Panto.Mail.val_f-Panto.Mail.Ls+pos[i]
         ind=np.where((x>=-Panto.Geom.half_width) & (x<=Panto.Geom.half_width))
         plt.plot(x[ind],SaveT[ind,j+1].flatten(),'-')
+        Tmid[j+1]=np.interp(-0.1, x[ind],SaveT[ind,j+1].flatten())
+
 
     plt.grid()
     plt.title('Num : Ls = '+str(Panto.Mail.Ls)+' : n = '+str(Panto.Mail.n)+\
@@ -276,6 +304,15 @@ if __name__  ==  '__main__' :
     # sauvegarde
     plt.savefig("./Results/Num_"+str(Panto.Mail.Ls)+"_"+str(Panto.Mail.n)+\
         "_"+str(Case.Time.dt)+"_"+str(Panto.Mail.pf)+".pdf")
+    
+    plt.figure(3)
+    plt.plot(savetime,Tmid)
+    plt.grid()
+    plt.xlabel('Temps [s]')
+    plt.ylabel('Echauffement [°C]')
+    plt.title('Température vs. time at x=-0.1 m')
+
+
 
 # BOUT DE CODE TRASH pour sauvegarde des Résultats    
 #
