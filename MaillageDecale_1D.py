@@ -153,8 +153,8 @@ def mergetime2(time1,time2,ratio) :
      """
     tmerge=np.r_[time1,time2]
     Ind=np.argsort(tmerge)
-    indices_ratio=np.where((Ind%ratio==0)&(Ind<time1.size))[0]
-    indices_time2=np.where(Ind>time1.size)[0]
+    indices_ratio=np.where((Ind%ratio==0)&(Ind<time1.size-1))[0]
+    indices_time2=np.where(Ind>time1.size-1)[0]
     indices=np.sort(np.unique(np.r_[indices_ratio,indices_time2]))
     return tmerge[Ind],indices
 
