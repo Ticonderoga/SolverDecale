@@ -151,12 +151,14 @@ def mergetime2(time1,time2,ratio) :
     
     **ind** : les indices de **time2** et des temps tous les **savet** dans **time**
      """
-    tmerge=np.r_[time1,time2]
-    Ind=np.argsort(tmerge)
-    indices_ratio=np.where((Ind%ratio==0)&(Ind<time1.size-1))[0]
-    indices_time2=np.where(Ind>time1.size-1)[0]
-    indices=np.sort(np.unique(np.r_[indices_ratio,indices_time2]))
-    return tmerge[Ind],indices
+    tmerge,Ind,counts=np.unique(np.r_[time1,time2],return_index=True,return_counts=True)
+    if counts.sum()!=(time1.size+time2.size):
+        print('Warning bases de temps se chevauchent')                
+    indices_ratio=np.where((Ind%ratio==0)&(Ind<time1.size))[0]
+    indices_time2=np.where(Ind>=time1.size)[0]
+    indices = np.union1d(indices_ratio,indices_time2)
+ 
+    return tmerge,indices,indices_time2
 
 if __name__  ==  '__main__' :
     
@@ -200,7 +202,7 @@ if __name__  ==  '__main__' :
     # les points de rebroussement
     timesup=np.arange(Period/4,Case.Time.final,Period/2)
     ratio=int(np.floor(Case.Time.savet/Case.Time.dt))
-    time,indxtime=mergetime2(timebase,timesup,ratio)
+    time,indxtime,indx_reb=mergetime2(timebase,timesup,ratio)
     # les dt sous forme vectorielle la plupart sont égaux à Case.Time.dt
     dt_v=np.diff(time)
     
@@ -210,6 +212,7 @@ if __name__  ==  '__main__' :
     
     # les vitesses de balayage en vectoriel
     sweeping_velocity_v=sweeping_velocity*scsi.square((time-Period/4)*2*np.pi/Period)
+    
     # les positions de la caténaire
     pos=Panto.Geom.sweeping*scsi.sawtooth((time-Period/4)*2*np.pi/Period,width=0.5)
     # le nombre de Fourier
@@ -244,8 +247,13 @@ if __name__  ==  '__main__' :
     Tmid[0]=Tinit[0]
     #%% debut boucle temporelle
     j=1
-       
+    k=0   
     for i,t in enumerate(time[:-1]) :
+
+        if i==indx_reb[k] and k<indx_reb.size-1:
+            sweeping_velocity_v[i]=-sweeping_velocity_v[i-1]
+            k=k+1
+            
         # Coefficient sur l'advection
         Beta=k/rho/Cp/4./Panto.Mail.Ls**2*Panto.Mail.val_D1\
             +1/2./Panto.Mail.Ls*sweeping_velocity_v[i]*Panto.Mail.val_D0
@@ -306,7 +314,7 @@ if __name__  ==  '__main__' :
         "_"+str(Case.Time.dt)+"_"+str(Panto.Mail.pf)+".pdf")
     
     plt.figure(3)
-    plt.plot(savetime,Tmid)
+    plt.plot(savetime,Tmid,'b*-')
     plt.grid()
     plt.xlabel('Temps [s]')
     plt.ylabel('Echauffement [°C]')
