@@ -212,7 +212,10 @@ if __name__  ==  '__main__' :
     
     # les vitesses de balayage en vectoriel
     sweeping_velocity_v=sweeping_velocity*scsi.square((time-Period/4)*2*np.pi/Period)
-    
+    # on régle le problème de la vitesse de balayage au rebroussement
+    for i in indx_reb :
+        sweeping_velocity_v[i]=-sweeping_velocity_v[i-1]
+
     # les positions de la caténaire
     pos=Panto.Geom.sweeping*scsi.sawtooth((time-Period/4)*2*np.pi/Period,width=0.5)
     # le nombre de Fourier
@@ -247,13 +250,7 @@ if __name__  ==  '__main__' :
     Tmid[0]=Tinit[0]
     #%% debut boucle temporelle
     j=1
-    k=0   
-    for i,t in enumerate(time[:-1]) :
-
-        if i==indx_reb[k] and k<indx_reb.size-1:
-            sweeping_velocity_v[i]=-sweeping_velocity_v[i-1]
-            k=k+1
-            
+    for i,t in enumerate(time[:-1]) :            
         # Coefficient sur l'advection
         Beta=k/rho/Cp/4./Panto.Mail.Ls**2*Panto.Mail.val_D1\
             +1/2./Panto.Mail.Ls*sweeping_velocity_v[i]*Panto.Mail.val_D0
@@ -298,7 +295,7 @@ if __name__  ==  '__main__' :
         x=2*Panto.Mail.Ls*Panto.Mail.val_f-Panto.Mail.Ls+pos[i]
         ind=np.where((x>=-Panto.Geom.half_width) & (x<=Panto.Geom.half_width))
         plt.plot(x[ind],SaveT[ind,j].flatten(),'-')
-        Tmid[j]=np.interp(-0.1, x[ind],SaveT[ind,j].flatten())
+        Tmid[j]=np.interp(0.0, x[ind],SaveT[ind,j].flatten())
 
 
     plt.grid()
