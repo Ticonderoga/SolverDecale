@@ -295,7 +295,7 @@ if __name__  ==  '__main__' :
         x=2*Panto.Mail.Ls*Panto.Mail.val_f-Panto.Mail.Ls+pos[i]
         ind=np.where((x>=-Panto.Geom.half_width) & (x<=Panto.Geom.half_width))
         plt.plot(x[ind],SaveT[ind,j].flatten(),'-')
-        Tmid[j]=np.interp(0.0, x[ind],SaveT[ind,j].flatten())
+        Tmid[j]=np.interp(-0.1, x[ind],SaveT[ind,j].flatten())
 
 
     plt.grid()
