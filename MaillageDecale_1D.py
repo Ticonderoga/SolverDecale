@@ -122,17 +122,6 @@ class Maillage(ImportData) :
             self.Geom.surface=self.Geom.perimeter*2*self.Geom.half_width+2*self.Geom.section
             self.Geom.volume=self.Geom.section*2*self.Geom.half_width
             
-    
-def mergetime(time1,time2) :
-    """Fonction permettant de fusionner deux bases de temps 
-    et surtout de donner les indices de time2 dans le nouveau
-    vecteur de temps
-    """
-    tmerge=np.r_[time1,time2]
-    Ind=np.argsort(tmerge)
-    indices=np.where(Ind>time1.size)[0]
-    return tmerge[Ind],indices
-
 def mergetime2(time1,time2,ratio) :
     """Fonction permettant de fusionner deux bases de temps 
     ratio représente le ratio (entier) entre savet et dt
@@ -143,7 +132,7 @@ def mergetime2(time1,time2,ratio) :
     >>>  ratio = int(np.floor(savet/dt))
     >>>  time1 = np.arange(0,tf,dt)
     >>>  time2 = # points supplémentaires
-    >>>  time,ind = mergetime2(time1,time2,ratio)
+    >>>  time,ind,ind_time2 = mergetime2(time1,time2,ratio)
      
     Returns : 
     --------
@@ -248,6 +237,9 @@ if __name__  ==  '__main__' :
     savetime[0]=0
     Tmid=np.empty((indxtime.size))
     Tmid[0]=Tinit[0]
+    Tcenter=np.empty((indxtime.size))
+    Tcenter[0]=Tinit[0]
+    
     #%% debut boucle temporelle
     j=1
     for i,t in enumerate(time[:-1]) :            
@@ -290,12 +282,14 @@ if __name__  ==  '__main__' :
 
     # on trace            
     plt.figure(2)
+    
     for j,i in enumerate(indxtime) :
         # recalcul des vraies positions
         x=2*Panto.Mail.Ls*Panto.Mail.val_f-Panto.Mail.Ls+pos[i]
         ind=np.where((x>=-Panto.Geom.half_width) & (x<=Panto.Geom.half_width))
         plt.plot(x[ind],SaveT[ind,j].flatten(),'-')
         Tmid[j]=np.interp(-0.1, x[ind],SaveT[ind,j].flatten())
+        Tcenter[j]=np.interp(0, x[ind],SaveT[ind,j].flatten())
 
 
     plt.grid()
@@ -311,11 +305,14 @@ if __name__  ==  '__main__' :
         "_"+str(Case.Time.dt)+"_"+str(Panto.Mail.pf)+".pdf")
     
     plt.figure(3)
-    plt.plot(savetime,Tmid,'b*-')
+    plt.plot(savetime,Tmid,'b-',label="Offset position")
+    plt.plot(savetime,Tcenter,'r-',label="Center position")
+    
     plt.grid()
     plt.xlabel('Temps [s]')
     plt.ylabel('Echauffement [°C]')
-    plt.title('Température vs. time at x=-0.1 m')
+    plt.title('Température vs. time')
+    plt.legend()
 
 
 
